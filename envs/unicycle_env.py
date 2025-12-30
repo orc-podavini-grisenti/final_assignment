@@ -1,10 +1,15 @@
-import gymnasium as gym
-from gymnasium import spaces
-import numpy as np
+import os
 import cv2
 import math
+import yaml
+
+import numpy as np
+
+import gymnasium as gym
+from gymnasium import spaces
 
 from obstacle_handler import ObstacleManager
+
 
 class UnicycleEnv(gym.Env):
     """
@@ -18,33 +23,26 @@ class UnicycleEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, config=None):
+    def __init__(self, config_path=None):
         super(UnicycleEnv, self).__init__()
 
-        # --- Configuration ---
-        if config is None:
-            config = {}
+        # --- 1. Load Configuration ---
+        if config_path is None:
+            # Default to config/env.yaml relative to this file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(current_dir) 
+            config_path = os.path.join(project_root, 'configs', 'env.yaml')
 
-        # --- Configuration ---
-        self.dt = 0.05  # Time step (s)
-        self.max_steps = 500
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        # --- 2. Apply Config Parameters ---
+        self.env_cfg = config['environment']    # Enviroment Configuration
+        self.rob_cfg = config['robot']          # Robot Configuration
+        self.goal_cfg = config['goal']        # Goal Configuration
+        self.obs_cfg = config['obstacles']    # Obstacle Configuration
+        self.rew_cfg = config['rewards']      # Reward Configuration
         
-        # Robot Constraints
-        self.v_min, self.v_max = 0.0, 1.0   # m/s
-        self.w_min, self.w_max = -1.5, 1.5  # rad/s
-        self.robot_radius = 0.3             # meters
-        
-        # Environment Config
-
-        # World bounds for obstacle generation
-        self.world_bounds = config.get('world_bounds', {
-            'x_min': 0.5, 'x_max': 3.5,
-            'y_min': -2.0, 'y_max': 2.0
-        })
-
-        self.n_obstacles = 3    # Number of obstacle to spawn
-        self.lidar_range = 3.0  # Max range to detect obstacles
-        self.goal_threshold = 0.2
         
         # --- Action Space ---
         # FIX: Define the arrays explicitly as float32 to match Gymnasium's expectation
@@ -55,7 +53,7 @@ class UnicycleEnv(gym.Env):
         )
         
         # --- Observation Space ---
-        obs_dim = 3 + (2 * self.n_obstacles)
+        obs_dim = 3 + (2 * self.obs_cfg['n_obstacles'])
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
@@ -70,7 +68,7 @@ class UnicycleEnv(gym.Env):
         self.current_step = 0
 
         # --- Modules ---
-        self.obstacle_manager = ObstacleManager(lidar_range=self.lidar_range)
+        self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
         
 
     def reset(self, seed=None, options=None):
@@ -79,43 +77,55 @@ class UnicycleEnv(gym.Env):
         # 1. Initialize Robot State (x, y, theta)
         self.state = np.array([0.0, 0.0, 0.0])
         
+
         # 2. Random Goal Generation (e.g., within a 5x5 box)
-        self.goal = np.array([
-            self.np_random.uniform(2.0, 4.0),
-            self.np_random.uniform(-2.0, 2.0),
-            self.np_random.uniform(-np.pi, np.pi)
-        ])
+        self._spaw_goal()
         
-        # 3. Random Obstacle Generation
-        self.obstacle_manager.generate_random_obstacles(
-            num_obstacles=self.n_obstacles,
-            bounds=self.world_bounds,
-            robot_pos=self.state,
-            goal_pos=self.goal,
-            min_clearance=0.5,
-            np_random=self.np_random
-        )
+
+        # 3. Initialize Obstacles
+        spawn_mode = self.obs_cfg['spawn_mode']
         
-        self.current_step = 0
+        if spawn_mode == 'fixed':
+            fixed_obstacles = self.obs_cfg.get('fixed_obstacles', [])
+            self.obstacle_manager.generate_fixed_obstacles(fixed_obstacles)
+            # Continui to try to spawn a gol until it is valid ( not collide with the fixed obstacle )
+            while self.obstacle_manager.check_collision(self.goal, self.goal_cfg['threshold']):
+                self._spaw_goal()
+
+        else:
+            self.obstacle_manager.generate_random_obstacles(
+                num_obstacles=self.obs_cfg['n_obstacles'], 
+                bounds=self.env_cfg['world_bounds'],
+                robot_pos=self.state,
+                goal_pos=self.goal,
+                min_clearance=0.5,
+                np_random=self.np_random
+            )
+            
+            self.current_step = 0
         
         return self._get_obs(), {}
+
+
+
 
     def step(self, action):
         # 1. Unpack and Scale Actions
         # Map [-1, 1] to physical limits
         v_raw, w_raw = action
-        v = np.interp(v_raw, [-1, 1], [self.v_min, self.v_max])
-        w = np.interp(w_raw, [-1, 1], [self.w_min, self.w_max])
+        v = np.interp(v_raw, [-1, 1], [ self.rob_cfg['v_min'], self.rob_cfg['v_max'] ])
+        w = np.interp(w_raw, [-1, 1], [ self.rob_cfg['w_min'], self.rob_cfg['w_max'] ])
         
         # 2. Apply Kinematics (Unicycle Model)
         # x_dot = v * cos(theta)
         # y_dot = v * sin(theta)
         # theta_dot = w
         x, y, theta = self.state
-        
-        x_new = x + v * np.cos(theta) * self.dt
-        y_new = y + v * np.sin(theta) * self.dt
-        theta_new = theta + w * self.dt
+        dt = self.env_cfg['dt']
+
+        x_new = x + v * np.cos(theta) * dt
+        y_new = y + v * np.sin(theta) * dt
+        theta_new = theta + w * dt
         
         # Normalize theta to [-pi, pi]
         theta_new = (theta_new + np.pi) % (2 * np.pi) - np.pi
@@ -128,10 +138,10 @@ class UnicycleEnv(gym.Env):
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
         
         # Check Collision
-        collision = self.obstacle_manager.check_collision(self.state, self.robot_radius)
+        collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
         
         # Check Goal Reached
-        reached_goal = distance_to_goal < self.goal_threshold
+        reached_goal = distance_to_goal < self.goal_cfg['threshold']
         
         # Reward Function (Basic version - can be moved to rewards.py)
         reward = 0.0
@@ -153,7 +163,7 @@ class UnicycleEnv(gym.Env):
             terminated = False
             
         # Truncation (Time limit)
-        truncated = self.current_step >= self.max_steps
+        truncated = self.current_step >= self.env_cfg['max_steps']
         
         info = {
             "is_success": reached_goal,
@@ -162,9 +172,11 @@ class UnicycleEnv(gym.Env):
         
         return self._get_obs(), reward, terminated, truncated, info
 
+
+
+    ''' Constructs the observation vector. '''
     def _get_obs(self):
         """
-        Constructs the observation vector.
         Vector: [rho, alpha, d_theta,  d_obs1, alpha_obs1, ...]
         """
         x, y, theta = self.state
@@ -185,7 +197,7 @@ class UnicycleEnv(gym.Env):
         obs_vec = [rho, alpha, d_theta]
         
         # --- Obstacle Observations ---
-        obs_data = self.obstacle_manager.get_closest_obstacles(self.state, self.n_obstacles)
+        obs_data = self.obstacle_manager.get_closest_obstacles(self.state, self.obs_cfg['n_obstacles'])
         
         # Flatten obstacle data
         flat_obs = []
@@ -193,6 +205,33 @@ class UnicycleEnv(gym.Env):
             flat_obs.extend([dist, angle])
                 
         return np.array(obs_vec + flat_obs, dtype=np.float32)
+
+
+
+    ''' Private Function that menage the spawn of a random goal.'''
+    def _spaw_goal(self):
+        # Get World Bounds and Margin
+        wb = self.env_cfg['world_bounds']
+        margin = self.goal_cfg['spawn_margin']
+        
+        # Calculate safe limits for goal
+        g_x_min = wb['x_min'] + margin
+        g_x_max = wb['x_max'] - margin
+        g_y_min = wb['y_min'] + margin
+        g_y_max = wb['y_max'] - margin
+        
+        # Ensure bounds are valid (avoid crash if world is too small)
+        if g_x_max <= g_x_min or g_y_max <= g_y_min:
+            raise ValueError("World bounds are too small for the requested goal spawn margin!")
+
+        self.goal = np.array([
+            self.np_random.uniform(g_x_min, g_x_max),
+            self.np_random.uniform(g_y_min, g_y_max),
+            self.np_random.uniform(-np.pi, np.pi)
+        ], dtype=np.float32)
+
+
+
 
     def render(self):
         """
@@ -229,7 +268,7 @@ class UnicycleEnv(gym.Env):
         # 4. Draw Robot (Blue Circle + Heading Line)
         rx, ry, theta = self.state
         rpx, rpy = to_pixel(rx, ry)
-        robot_rad_px = int(self.robot_radius * scale)
+        robot_rad_px = int(self.rob_cfg['radius'] * scale)
         
         # Body
         cv2.circle(canvas, (rpx, rpy), robot_rad_px, (255, 0, 0), -1)

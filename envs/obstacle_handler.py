@@ -4,41 +4,26 @@ from dataclasses import dataclass
 
 @dataclass
 class Obstacle:
-    """Represents a polygonal obstacle."""
-    vertices: np.ndarray  # Shape (N, 2) where N is number of vertices
+    """Represents a polygonal obstacle defined by a set of vertices."""
+    vertices: np.ndarray  # Shape (N, 2)
     
     def __post_init__(self):
-        """Ensure vertices are in the correct format."""
         self.vertices = np.array(self.vertices, dtype=np.float32)
         if len(self.vertices.shape) != 2 or self.vertices.shape[1] != 2:
             raise ValueError("Vertices must be Nx2 array")
     
     @property
     def center(self) -> np.ndarray:
-        """Calculate the centroid of the polygon."""
         return np.mean(self.vertices, axis=0)
-    
-    @property
-    def bounding_radius(self) -> float:
-        """Calculate the radius of the smallest circle containing the polygon."""
-        center = self.center
-        distances = np.linalg.norm(self.vertices - center, axis=1)
-        return np.max(distances)
-    
+
     @classmethod
     def create_circle(cls, center: Tuple[float, float], radius: float, num_vertices: int = 12):
-        """Create a circular obstacle approximated by a polygon."""
         angles = np.linspace(0, 2 * np.pi, num_vertices, endpoint=False)
-        vertices = np.array([
-            [center[0] + radius * np.cos(angle), 
-             center[1] + radius * np.sin(angle)]
-            for angle in angles
-        ])
+        vertices = np.array([[center[0] + radius * np.cos(a), center[1] + radius * np.sin(a)] for a in angles])
         return cls(vertices)
-    
+
     @classmethod
     def create_rectangle(cls, center: Tuple[float, float], width: float, height: float):
-        """Create a rectangular obstacle."""
         half_w, half_h = width / 2, height / 2
         vertices = np.array([
             [center[0] - half_w, center[1] - half_h],
@@ -48,9 +33,15 @@ class Obstacle:
         ])
         return cls(vertices)
 
+    @classmethod
+    def create_polygon(cls, vertices_list: List[List[float]]):
+        """Creates an obstacle from a raw list of vertices [[x1,y1], [x2,y2]...]."""
+        return cls(np.array(vertices_list))
 
+
+
+"""Manages obstacles in the environment."""
 class ObstacleManager:
-    """Manages obstacles in the environment."""
     
     def __init__(self, lidar_range: float = 3.0):
         self.obstacles: List[Obstacle] = []
@@ -63,6 +54,33 @@ class ObstacleManager:
     def clear_obstacles(self):
         """Remove all obstacles."""
         self.obstacles.clear()
+
+    def generate_fixed_obstacles(self, fixed_data_list):
+        """
+        Parses YAML data to create various obstacle types.
+        """
+        for data in fixed_data_list:
+            if data is None: continue
+            
+            obs_type = data[0]
+            new_obstacle = None
+            
+            if obs_type == 'circle':
+                # format: ['circle', x, y, [radius]]
+                new_obstacle = Obstacle.create_circle((data[1], data[2]), data[3][0])
+                
+            elif obs_type == 'rectangle':
+                # format: ['rectangle', x, y, [width, height]]
+                new_obstacle = Obstacle.create_rectangle((data[1], data[2]), data[3][0], data[3][1])
+            
+            elif obs_type == 'polygon':
+                # format: ['polygon', [[x1,y1], [x2,y2], [x3,y3]...]]
+                # Note: For polygons, data[1] is the entire list of vertices
+                new_obstacle = Obstacle.create_polygon(data[1])
+            
+            if new_obstacle is not None:
+                self.add_obstacle(new_obstacle)
+                
     
     def generate_random_obstacles(self, num_obstacles: int, bounds: dict, 
                                    robot_pos: np.ndarray, goal_pos: np.ndarray,
