@@ -1,56 +1,36 @@
+## 🚀 Getting Started
 
+Follow these steps to set up the development environment and run the simulation.
 
-Directory Structure:
-```graphql
-final_assignemnt/
-│
-├── README.md
-├── requirements.txt
-│
-├── configs/        # Configuration files:
-│   ├── env.yaml        # environment configuration
-│   ├── ppo.yaml
-│   └── training.yaml
-│
-├── envs/           # Defines the RL environment:
-│   ├── __init__.py
-│   ├── obstacles.py        # obstacle handling
-|   ├── test_env.py         # test environment script
-|   ├── unicycle_env.py     # global environment definition
-│   └── rewards.py          # reward function
-│
-├── controllers/            #Implementation of classic and RL:
-│   ├── __init__.py
-│   ├── lyapunov_controller.py
-│   └── rl_controller.py
-│
-├── models/                 # Neural networks only:
-│   ├── __init__.py
-│   ├── actor.py
-│   ├── critic.py
-│   └── networks.py
-│
-├── algorithms/     # RL algorithm implementation:
-│   ├── __init__.py
-│   └── ppo.py
-│
-├── training/      # Scripts to train the policy and evaluate it
-│   ├── train_ppo.py
-│   └── evaluate.py
-│
-├── utils/
-│   ├── math_utils.py
-│   ├── logger.py
-│   ├── normalization.py
-│   └── visualization.py
-│
-├── logs/
-│   └── runs/
-│
-├── checkpoints/
-│   └── ppo/
-│
-└── scripts/
-    ├── run_training.sh
-    └── run_eval.sh
+### 1. Set Up the Environment
+It is recommended to use a virtual environment to keep dependencies isolated.
+
+```bash
+# Create the virtual environment
+python3 -m venv .venv
+
+# Activate the environment
+source .venv/bin/activate   # On Linux/macOS:
+.venv\Scripts\activate    # On Windows:
+``` 
+
+### 2. Install Dependencies
+Install the required Python packages specified in requirements.txt.
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Running the Simulation
+Note: This project is structured to be run from the root directory.
+Before running any scripts, ensure the root directory is added to your Python path so imports work correctly.
+
+```bash
+# 1. Export the Python path (Run this once per terminal session)
+export PYTHONPATH=$PYTHONPATH:.
+# 2. Run the scripts from the root folder
+python planner/execute_dubins.py # Example: Running the Dubins Path Executor
+```
+Tip: Alternatively, you can run scripts as modules without manually exporting the path: 
+```bash
+python -m planner.execute_dubins
 ```
