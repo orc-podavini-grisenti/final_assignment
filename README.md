@@ -7,15 +7,16 @@ final_assignemnt/
 ├── README.md
 ├── requirements.txt
 │
-├── configs/
-│   ├── env.yaml
+├── configs/        # Configuration files:
+│   ├── env.yaml        # environment configuration
 │   ├── ppo.yaml
 │   └── training.yaml
 │
-├── envs/               # Defines the RL environment:
+├── envs/           # Defines the RL environment:
 │   ├── __init__.py
-│   ├── unicycle_env.py     # robot kinematics
 │   ├── obstacles.py        # obstacle handling
+|   ├── test_env.py         # test environment script
+|   ├── unicycle_env.py     # global environment definition
 │   └── rewards.py          # reward function
 │
 ├── controllers/            #Implementation of classic and RL:

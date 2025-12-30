@@ -8,7 +8,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-from obstacle_handler import ObstacleManager
+from envs.obstacle import ObstacleManager
 
 
 class UnicycleEnv(gym.Env):
