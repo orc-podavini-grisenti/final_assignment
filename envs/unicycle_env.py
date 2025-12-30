@@ -71,26 +71,38 @@ class UnicycleEnv(gym.Env):
         self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
         
 
+
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
         # 1. Initialize Robot State (x, y, theta)
         self.state = np.array([0.0, 0.0, 0.0])
         
-
         # 2. Random Goal Generation (e.g., within a 5x5 box)
         self._spaw_goal()
         
-
         # 3. Initialize Obstacles
         spawn_mode = self.obs_cfg['spawn_mode']
         
         if spawn_mode == 'fixed':
             fixed_obstacles = self.obs_cfg.get('fixed_obstacles', [])
             self.obstacle_manager.generate_fixed_obstacles(fixed_obstacles)
-            # Continui to try to spawn a gol until it is valid ( not collide with the fixed obstacle )
+            
+            # Validation Loop: Ensure Goal doesn't hit Fixed Obstacles
+            max_retries = 100       # use a max retries to avoid infinit loop
+            i = 0
             while self.obstacle_manager.check_collision(self.goal, self.goal_cfg['threshold']):
-                self._spaw_goal()
+                if i > max_retries:
+                    raise RuntimeError("Could not find valid goal position after 100 tries.")
+                
+                # If both are fixed and colliding, it's a config error
+                if self.goal_cfg['spawn_mode'] == 'fixed':
+                    raise ValueError("Configuration Error: Fixed Goal is inside a Fixed Obstacle!")
+                
+                # Try a new random goal
+                self._spawn_goal()
+                i += 1
 
         else:
             self.obstacle_manager.generate_random_obstacles(
@@ -101,8 +113,10 @@ class UnicycleEnv(gym.Env):
                 min_clearance=0.5,
                 np_random=self.np_random
             )
+            # NB: We don't need to check that the goal collide with obstacle; becouse generate_random_obstacles
+            # menage alredy it; by generate obstacle that avoid the goal
             
-            self.current_step = 0
+        self.current_step = 0
         
         return self._get_obs(), {}
 
@@ -215,21 +229,31 @@ class UnicycleEnv(gym.Env):
         margin = self.goal_cfg['spawn_margin']
         
         # Calculate safe limits for goal
-        g_x_min = wb['x_min'] + margin
-        g_x_max = wb['x_max'] - margin
-        g_y_min = wb['y_min'] + margin
-        g_y_max = wb['y_max'] - margin
+        g_x_min, g_x_max = wb['x_min'] + margin, wb['x_max'] - margin
+        g_y_min, g_y_max = wb['y_min'] + margin, wb['y_max'] - margin
         
         # Ensure bounds are valid (avoid crash if world is too small)
         if g_x_max <= g_x_min or g_y_max <= g_y_min:
-            raise ValueError("World bounds are too small for the requested goal spawn margin!")
+            raise ValueError("World bounds too small for goal margin!")
 
-        self.goal = np.array([
-            self.np_random.uniform(g_x_min, g_x_max),
-            self.np_random.uniform(g_y_min, g_y_max),
-            self.np_random.uniform(-np.pi, np.pi)
-        ], dtype=np.float32)
-
+        # Fixed spawn modality:
+        if self.goal_cfg['spawn_mode'] == 'fixed':
+            # Load fixed goal
+            fg = self.goal_cfg['fixed_goal']
+            self.goal = np.array(fg, dtype=np.float32)
+            
+            # Validate bounds
+            if not (g_x_min <= self.goal[0] <= g_x_max and g_y_min <= self.goal[1] <= g_y_max):
+                 # We warn but don't crash, in case you intentionally want a hard goal near a wall
+                 print(f"Warning: Fixed goal {self.goal} is outside safe spawn margin.")
+        
+        # Random spawn modality:
+        else:
+            self.goal = np.array([
+                self.np_random.uniform(g_x_min, g_x_max),
+                self.np_random.uniform(g_y_min, g_y_max),
+                self.np_random.uniform(-np.pi, np.pi)
+            ], dtype=np.float32)
 
 
 
