@@ -69,6 +69,9 @@ class UnicycleEnv(gym.Env):
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
+
+        # --- Render Stuffs --- 
+        self.trajectory_buffer = None
         
 
 
@@ -302,6 +305,19 @@ class UnicycleEnv(gym.Env):
         end_y = rpy - int(robot_rad_px * np.sin(theta)) # Minus because Y is flipped
         cv2.line(canvas, (rpx, rpy), (end_x, end_y), (0, 0, 0), 2)
 
+        # 5. Draw Trajectory (if set) ---
+        if self.trajectory_buffer is not None and len(self.trajectory_buffer) > 0:
+            # Convert world points to pixel points
+            path_pixels = []
+            for pt in self.trajectory_buffer:
+                # pt is assumed to be [x, y, ...]
+                path_pixels.append(to_pixel(pt[0], pt[1]))
+            
+            # Draw as a polyline (Cyan color)
+            pts = np.array(path_pixels, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(canvas, [pts], isClosed=False, color=(255, 255, 0), thickness=2)
+
         # 5. Display (Optional: Only works if you have a GUI/X11)
         # If running in headless Docker, you might want to return the array instead.
         if self.render_mode == "human":
@@ -309,3 +325,11 @@ class UnicycleEnv(gym.Env):
             cv2.waitKey(1)  # 1ms delay to process events
             
         return canvas
+    
+
+    def set_render_trajectory(self, path):
+        """
+        Sets a trajectory (list of [x, y] or [x, y, theta]) to be visualized.
+        Call this from your main script after calculating the path.
+        """
+        self.trajectory_buffer = path
