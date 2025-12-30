@@ -12,7 +12,7 @@ def execute_dubins():
     env.render_mode = "human"
     
     # Planner & Controller
-    planner = DubinsPlanner(curvature_max=1.5, step_size=0.05) # Small step size for smooth tracking
+    planner = DubinsPlanner(curvature_max=1.5, step_size=0.05) 
     controller = LyapunovController(LyapunovParams(K_P=2.0, K_THETA=5.0))
 
     obs, info = env.reset()
@@ -22,85 +22,110 @@ def execute_dubins():
     goal_pose = env.goal
     
     print(f"Planning from {start_pose} to {goal_pose}")
-    # Returns [x, y, theta, k]
     path = planner.get_path(start_pose, goal_pose)
     
     if path is None:
         print("Planning failed!")
         return
 
-    # Visuals
-    env.set_render_trajectory(path[:, :2]) # Send just X,Y for plotting
+    # Visuals: Inject path into env for rendering
+    env.set_render_trajectory(path[:, :2]) 
 
     # 3. Execution Loop
     print("Executing Path...")
     
-    # Reference velocity (Cruise speed)
-    V_CRUISE = 0.5 
-    
-    # We iterate through the path points. 
-    # Since the planner generates spatial points, we assume we want to visit 
-    # one point per simulation step (or use a 'Lookahead' index).
-    # For simplicity, we simply track the "next" point in the list.
-    
+    V_CRUISE = 0.4 
     path_idx = 0
     max_idx = len(path) - 1
     
-    # Tolerance to switch to next waypoint
-    WAYPOINT_TOLERANCE = 0.1 
+    WAYPOINT_TOLERANCE = 0.1  # Distance to switch to next waypoint
+    PARKING_DIST = 0.3        # Distance to switch to parking mode
 
     while True:
-        # A. Determine Current Target Waypoint
-        # Get the reference state from the path
-        ref_x, ref_y, ref_theta, ref_k = path[path_idx]
+        # --- A. STRATEGY SELECTION ---
+        # Calculate distance to the final goal
+        dist_to_final = np.linalg.norm(env.state[:2] - goal_pose[:2])
         
-        # Calculate Feed-forward commands
-        # v_ref = V_CRUISE
-        # omega_ref = v_ref * curvature
-        v_ref = V_CRUISE
-        omega_ref = V_CRUISE * ref_k
-        
-        # B. Construct Observation relative to this specific waypoint
-        # (We manually calculate the error obs because 'env.step' returns obs relative to the FINAL goal)
+        target_x, target_y, target_theta = 0, 0, 0
+        v_ref, omega_ref = 0, 0
+        mode_debug = ""
+
+        if dist_to_final < PARKING_DIST:
+            # === MODE: PARKING ===
+            # Target is the absolute final goal
+            target_x, target_y, target_theta = goal_pose
+            
+            # Zero feed-forward velocity -> Activates Stabilization logic
+            v_ref = 0.0
+            omega_ref = 0.0
+            mode_debug = "PARKING"
+            
+        else:
+            # === MODE: TRACKING ===
+            # Target is the current waypoint on the curve
+            # path[i] contains [x, y, theta, k]
+            target_x, target_y, target_theta, target_k = path[path_idx]
+            
+            # Feed-forward tracking commands
+            v_ref = V_CRUISE
+            omega_ref = V_CRUISE * target_k
+            mode_debug = f"TRACKING (Idx {path_idx}/{max_idx})"
+
+        # --- B. CONSTRUCT OBSERVATION ---
+        # Calculate error relative to the SELECTED target (Waypoint or Goal)
         rx, ry, rtheta = env.state
         
-        dx = ref_x - rx
-        dy = ref_y - ry
+        dx = target_x - rx
+        dy = target_y - ry
         rho = np.sqrt(dx**2 + dy**2)
-        alpha = (np.arctan2(dy, dx) - rtheta + np.pi) % (2 * np.pi) - np.pi
-        d_theta = (ref_theta - rtheta + np.pi) % (2 * np.pi) - np.pi
         
-        # Current 'Tracking' Observation
+        # Angle to target relative to robot heading
+        alpha = (np.arctan2(dy, dx) - rtheta + np.pi) % (2 * np.pi) - np.pi
+        
+        # Orientation error relative to robot heading
+        d_theta = (target_theta - rtheta + np.pi) % (2 * np.pi) - np.pi
+        
+        # This is the 'obs' we feed to the controller
         tracking_obs = np.array([rho, alpha, d_theta])
 
-        # C. Get Control Action
-        # Pass the feed-forward references!
+        # --- C. GET CONTROL ACTION ---
         action = controller.get_action(tracking_obs, v_ref=v_ref, omega_ref=omega_ref)
-        
-        # D. Step Environment
-        # Note: We ignore the env's reward/done here because we are following our own path task
-        _, _, collision, _, _ = env.step(action)
+
+        # --- D. STEP ENVIRONMENT ---
+        _, _, terminal, truncated, info = env.step(action)
         env.render()
         
-        # E. Update Waypoint Logic (Simple pure pursuit style)
-        if rho < WAYPOINT_TOLERANCE and path_idx < max_idx:
-            path_idx += 1
-            
+        # --- E. UPDATE LOGIC ---
+        
+        # Update Waypoint (Only if in Tracking Mode)
+        if dist_to_final >= PARKING_DIST:
+            # If close to current waypoint, move to next
+            if rho < WAYPOINT_TOLERANCE and path_idx < max_idx:
+                path_idx += 1
+        
+        # Debug Print (Optional)
+        print(f"Mode: {mode_debug} | Dist: {dist_to_final:.3f} | Action: {action}")
+
         # Check finish conditions
-        dist_to_final = np.linalg.norm(env.state[:2] - goal_pose[:2])
-        if dist_to_final < 0.2 and path_idx == max_idx:
-            print("🎉 Destination Reached!")
-            break
-            
-        if collision:
-            print("❌ Collision!")
+        if terminal:
+            if info.get('is_success', False):
+                print(f"🎉 Destination Reached! Final Error: {dist_to_final:.4f}m")
+                break
+            if info.get('collision', False):
+                print("❌ Collision!")
+                break
+
+        if truncated:
+            print("⏱ Time Limit Exceeded!")
             break
 
         # Quit on ESC
         if cv2.waitKey(20) == 27:
             break
 
-    print("Execution finished.")
+    print("Press any key to close window...")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     execute_dubins()

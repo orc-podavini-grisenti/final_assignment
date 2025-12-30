@@ -125,8 +125,22 @@ class UnicycleEnv(gym.Env):
 
 
 
-
     def step(self, action):
+        """
+        Updates the robot state based on the provided action.
+
+        Args:
+            action (np.ndarray): A 1D array of shape (2,) containing 
+                [v_raw, w_raw] in the range [-1, 1].
+
+        Returns:
+            tuple: A tuple containing:
+                - observation (np.ndarray): The new state representation.
+                - reward (float): The scalar reward value after the step.
+                - terminated (bool): Whether the episode has ended (goal or collision).
+                - truncated (bool): Whether the episode ended due to time limits.
+                - info (dict): Diagnostic information (success, collision flags).
+        """
         # 1. Unpack and Scale Actions
         # Map [-1, 1] to physical limits
         v_raw, w_raw = action
