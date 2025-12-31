@@ -35,6 +35,7 @@ final_assignemnt/
 │   └── ppo.py
 │
 ├── training/      # Scripts to train the policy and evaluate it
+│   ├── reinforcment.ipynb      # noteboock for training the TT trajectory
 │   ├── train_ppo.py
 │   └── evaluate.py
 │
