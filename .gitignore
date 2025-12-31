@@ -1,2 +1,4 @@
 .venv
 **/__pycache__/
+
+/training/tt_network_reinforce.pth

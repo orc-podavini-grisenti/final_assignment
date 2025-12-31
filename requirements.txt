@@ -2,3 +2,5 @@ gymnasium       # OpenAI RL API
 numpy 
 opencv-python   # Used to render the enviroment 
 PyYAML
+torch
+matplot
