@@ -9,6 +9,8 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from envs.obstacle import ObstacleManager
+from envs.reward import TrajectoryReward
+
 
 
 class UnicycleEnv(gym.Env):
@@ -69,7 +71,8 @@ class UnicycleEnv(gym.Env):
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
-
+        self.reward_manager = TrajectoryReward()
+        
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
         
@@ -164,6 +167,9 @@ class UnicycleEnv(gym.Env):
         # Update the state to the new one
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
+
+        # Define the new observable
+        obs = self._get_obs()
         
         # 3. Calculate Rewards and Checks
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
@@ -175,7 +181,7 @@ class UnicycleEnv(gym.Env):
         reached_goal = distance_to_goal < self.goal_cfg['threshold']
         
         # Reward Function (Basic version - can be moved to rewards.py)
-        reward = 0.0
+        reward = self.reward_manager.compute_reward(obs, action)
         
         # Progress reward (change in distance)
         prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
@@ -201,14 +207,35 @@ class UnicycleEnv(gym.Env):
             "collision": collision
         }
         
-        return self._get_obs(), reward, terminated, truncated, info
+        return obs, reward, terminated, truncated, info
 
 
 
     ''' Constructs the observation vector. '''
     def _get_obs(self):
         """
-        Vector: [rho, alpha, d_theta,  d_obs1, alpha_obs1, ...]
+        Constructs the Ego-Centric Observation Vector.
+        
+        Instead of Global Cartesian coordinates (x, y), we use a Polar (Robot-Centric) 
+        reference frame. This allows the learned policy to be 'Invariant to Rotation' 
+        and 'Invariant to Translation'—meaning the agent learns to approach a target 
+        regardless of where it is on the map or which way it is facing.
+        
+        Vector Components:
+        ------------------
+        1. rho (ρ): [0, inf]        Euclidean distance to the goal.
+            Represents 'How far do I need to travel?' (Linear Velocity cue)
+        
+        2. alpha (α): [-pi, pi]     The angle of the goal *relative* to the robot's current heading.
+            Represents 'Where should I steer?' (Angular Velocity cue)
+            If alpha = 0, the goal is straight ahead. If alpha > 0, goal is to the left; alpha < 0, goal is to the right.
+
+        3. d_theta (δθ): [-pi, pi]
+            The difference between the desired goal orientation and current heading.
+            Exential to reach the goal with the desired orientation.s
+        
+        4. Obstacle Data (d_obs, phi_obs):
+           - Vector of closest obstacles, also in polar coordinates (dist, angle).
         """
         x, y, theta = self.state
         gx, gy, gtheta = self.goal
