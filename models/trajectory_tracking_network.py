@@ -17,7 +17,8 @@ class TTNetwork(nn.Module):
             nn.Tanh(),                  # Tanh is preferred for control tasks (smooth gradients)
             nn.Linear(128, 64),
             nn.Tanh(),
-            nn.Linear(64, action_dim)   # Output layer: one value per action dimension
+            nn.Linear(64, action_dim),  # Output layer: one value per action dimension
+            nn.Tanh()                   # Bounds output to [-1, 1]
         )
         
         # Learnable log_std allows the RL agent to adapt its exploration noise over time.
