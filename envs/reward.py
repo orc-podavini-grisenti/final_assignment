@@ -1,66 +1,44 @@
 import numpy as np
 
-''' 
-    PART 1: Feedback Controller for Trajectory Tracking
-    --------------------------------------------------
-    Goal: Replace the analytical Lyapunov controller with a learned RL policy.
-    This reward function incentivizes precise tracking and stable motion.
-    
-    COMPONENTS:
-    1. Positional Error (R_pos): 
-       Minimizes Euclidean distance (rho) between the robot and target waypoint.
-       Formula: -w_rho * rho
-       
-    2. Heading Error (R_head): 
-       Ensures the robot's orientation (theta) aligns with the path.
-       Formula: -w_theta * |delta_theta|
-       
-    3. Smoothness (R_smooth): 
-       Penalizes high angular velocity (omega) to prevent jittery oscillations.
-       Formula: -w_omega * |omega|
-       
-    Note: Obstacle avoidance (Part 2) is excluded from this formulation.
-'''
 class TrajectoryReward:
     def __init__(self, config=None):
-        # Weights for Part 1: Trajectory Tracking
-        self.w_rho = 2.0      # Weight for distance error
-        self.w_theta = 1.0    # Weight for heading error
-        self.w_omega = 0.1    # Weight for smoothness (penalize steering effort)
-        self.w_vel = 0.5      # Reward for maintaining speed (optional)
+        # Adjusted weights for Positive Reinforcement
+        self.k_rho = 5.0      # Sharpness of the position kernel (Higher = strictly requires precision)
+        self.w_rho = 1.5      # Max reward for perfect position
+        self.w_theta = 0.8    # Max reward for perfect alignment
+        self.w_omega = 0.05   # Weight for smoothness penalty
+        self.w_vel = 0.2      # Weight for forward progress
 
     def compute_reward(self, tracking_obs, action):
-        """
-        Calculates reward based on the Tracking Observation (not the global goal).
-        
-        Args:
-            tracking_obs: [rho, alpha, d_theta] relative to the current waypoint.
-            action: [v, omega] physical action taken.
-        """
-        rho = tracking_obs[0]      # Distance to waypoint
-        alpha = tracking_obs[1]    # Bearing to waypoint
-        d_theta = tracking_obs[2]  # Orientation error relative to waypoint path
+        rho = tracking_obs[0]      # Distance
+        d_theta = tracking_obs[2]  # Heading Error
         v, omega = action
 
-        reward = 0.0
+        # --- 1. Position: Gaussian/Exponential Kernel (The Fix) ---
+        # Instead of -rho (linear), we use exp(-rho^2).
+        # Result: +1.0 when rho=0, decays to 0.0 when far away.
+        # This is bounded [0, 1] and creates a stable "attractor" to the path.
+        r_pos = np.exp(-self.k_rho * rho**2)
 
-        # 1. Minimize Position Error (The main objective)
-        # We use an exponential kernel so the reward is higher (near 0) when close, 
-        # and decays to -1 when far away. This is more stable than linear -rho.
-        reward -= self.w_rho * rho
+        # --- 2. Heading: Cosine Alignment ---
+        # Instead of -abs(d_theta), we use cos(d_theta).
+        # Result: +1.0 when aligned, -1.0 when opposite.
+        # This is smoother and differentiable everywhere.
+        r_head = np.cos(d_theta)
 
-        # 2. Minimize Heading Error
-        # Crucial for "Trajectory" tracking, otherwise it just touches points sideways
-        reward -= self.w_theta * abs(d_theta)
+        # --- 3. Smoothness Penalty ---
+        # Keep this negative to discourage shaking
+        r_smooth = -np.abs(omega)
 
-        # 3. Smoothness Penalty (Part 1 requirement)
-        # Penalize large steering commands to prevent oscillation
-        reward -= self.w_omega * abs(omega)
+        # --- 4. Forward Velocity Bonus ---
+        # Only reward speed if we are roughly aligned (prevent running away fast)
+        r_vel = 0.0
+        if abs(d_theta) < 1.0: 
+            r_vel = v  # Reward moving forward
 
-        # 4. Progress Bonus (Optional)
-        # Reward moving forward if we are roughly aligned
-        # This prevents the robot from sitting still to minimize omega penalty
-        # if abs(alpha) < 0.5:  # If looking at target
-        #     reward += self.w_vel * v
+        # TOTAL REWARD
+        # Theoretical Max per step: 1.5 (pos) + 0.8 (head) + 0.2 (vel) = ~2.5
+        # Theoretical Min per step: 0.0 + (-0.8) + (-omega) = Negative
+        reward = (self.w_rho * r_pos) + (self.w_theta * r_head) + (self.w_omega * r_smooth) + (self.w_vel * r_vel)
 
         return reward
