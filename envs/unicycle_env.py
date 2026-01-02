@@ -194,7 +194,7 @@ class UnicycleEnv(gym.Env):
             reward -= 20.0
             terminated = True
         elif reached_goal:
-            reward += 20.0
+            reward += 50.0
             terminated = True
         else:
             terminated = False
