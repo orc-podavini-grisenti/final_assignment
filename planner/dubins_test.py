@@ -29,11 +29,8 @@ else:
     env.set_render_trajectory(path)
 
 # 4. Wait loop to visualize
-print("Press SPACE to start stepping...")
-while True:
-    env.render()
-    
-    # Wait for space key (32) to step, or Esc (27) to exit
-    key = cv2.waitKey(10)
-    if key == 27: # ESC
-        break
+print("Press any key to close window...")
+env.render()
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
