@@ -5,6 +5,7 @@ import time
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
 from controllers.lyapunov_controller import LyapunovController, LyapunovParams
+from controllers.rl_controller import RLController
 
 def execute_dubins():
     # 1. Initialize
@@ -13,7 +14,8 @@ def execute_dubins():
     
     # Planner & Controller
     planner = DubinsPlanner(curvature_max=1.5, step_size=0.05) 
-    controller = LyapunovController(LyapunovParams(K_P=2.0, K_THETA=5.0))
+    # controller = LyapunovController(LyapunovParams(K_P=2.0, K_THETA=5.0))
+    controller = RLController(model_path="models_saved/experiments/run_20260103_101956/policy_model.pth")
 
     obs, info = env.reset()
     
