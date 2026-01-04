@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import matplotlib.pyplot as plt
 from datetime import datetime
-from simulation import run_simulation
+from utils.simulation import run_simulation
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
 from controllers.rl_controller import RLController
