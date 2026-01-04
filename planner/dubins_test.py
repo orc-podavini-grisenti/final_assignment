@@ -30,7 +30,6 @@ else:
 
 # 4. Wait loop to visualize
 print("Press any key to close window...")
-env.render()
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
