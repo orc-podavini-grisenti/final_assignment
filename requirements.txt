@@ -4,3 +4,7 @@ opencv-python   # Used to render the enviroment
 PyYAML
 torch
 matplot
+pandas
+seaborn
+scipy
+tabulate

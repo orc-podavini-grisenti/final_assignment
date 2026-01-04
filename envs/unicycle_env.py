@@ -126,6 +126,20 @@ class UnicycleEnv(gym.Env):
         
         return self._get_obs(), {}
 
+    def reset_robot(self):
+        """
+        Resets the robot to the starting state and resets the timer,
+        BUT keeps the current obstacles and goal configurations.
+        """
+        # 1. Reset Robot State (Matches the logic in your main reset)
+        self.state = np.array([0.0, 0.0, 0.0])
+        
+        # 2. Reset Simulation Timer/Counters
+        self.current_step = 0
+        
+        # 3. Return observation (standard Gym API)
+        return self._get_obs(), {}
+
 
 
     def step(self, action):

@@ -7,7 +7,7 @@ def run_single_demo():
 
     env = UnicycleEnv()
     planner = DubinsPlanner(curvature_max=1, step_size=0.05)
-    controller = RLController(model_path="models_saved/experiments/run_20260103_101956/policy_model.pth")
+    controller = RLController(model_path="outputs/models_saved/experiments/run_20260103_101956/policy_model.pth")
 
     print("Starting visual demonstration...")
     result = run_simulation(env, planner, controller, render=True)
