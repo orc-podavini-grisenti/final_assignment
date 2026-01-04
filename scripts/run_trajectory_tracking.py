@@ -56,7 +56,13 @@ def run_single_demo():
     
     # 5. Print Results
     if result:
-        status = "SUCCESS" if result["is_success"] else "FAILED"
+        if result["is_success"]: status = "SUCCESS"
+        else:
+            status = "FAILED (unkown reason)"
+            if result["truncated"]: status += " (Time Limit)"
+            if result["collision"]: status += " (Collision)"
+
+            
         print(f"Result: {status} | Final Error: {result['distance_error']:.4f}m")
 
 if __name__ == "__main__":

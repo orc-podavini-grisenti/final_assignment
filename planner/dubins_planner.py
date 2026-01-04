@@ -83,26 +83,72 @@ class DubinsPlanner:
         return best_lengths, k_signs
 
     def _generate_points(self, start, lengths, curvatures):
-        """Samples points along the defined arcs."""
-        x, y, theta = start
-        # Add 4th column for curvature (k)
-        path = [[x, y, theta, 0.0]] 
+        """
+        Generates path points using exact trigonometric interpolation 
+        instead of Euler integration to avoid drift.
+        """
+        x_current, y_current, theta_current = start
+        path = [[x_current, y_current, theta_current, 0.0]]
         
+        # Loop through the 3 segments
         for length, k in zip(lengths, curvatures):
             if length < 1e-6: continue
-            
+
             n_steps = int(math.ceil(length / self.step_size))
+            if n_steps == 0: continue
             
-            if n_steps > 0:
-                ds = length / n_steps
-                for _ in range(n_steps):
-                    x += math.cos(theta) * ds
-                    y += math.sin(theta) * ds
-                    theta += k * ds
-                    
-                    # Store [x, y, theta, k]
-                    path.append([x, y, self._mod2pi(theta), k])
+            # 1. Store the start of this segment
+            x0, y0, th0 = x_current, y_current, theta_current
+            
+            ds = length / n_steps
+            
+            for i in range(1, n_steps + 1):
+                dist = i * ds
                 
+                # --- Exact Integration ---
+                if abs(k) < 1e-6:
+                    # Straight Motion (Linear)
+                    x = x0 + dist * math.cos(th0)
+                    y = y0 + dist * math.sin(th0)
+                    theta = th0
+                else:
+                    # Circular Motion (Arc)
+                    # Radius r = 1/k. Center of rotation formulas.
+                    r = 1.0 / k
+                    
+                    # Change in angle
+                    d_theta = dist * k
+                    theta = self._mod2pi(th0 + d_theta)
+                    
+                    # Chord length formula for displacement
+                    # dx = r * sin(d_theta)
+                    # dy = r * (1 - cos(d_theta))
+                    # rotated by th0
+                    
+                    chord = 2.0 * r * math.sin(d_theta / 2.0)
+                    # The angle of the chord relative to start heading is d_theta/2
+                    
+                    # Global position
+                    x = x0 + chord * math.cos(th0 + d_theta / 2.0)
+                    y = y0 + chord * math.sin(th0 + d_theta / 2.0)
+
+                # Append
+                path.append([x, y, theta, k])
+            
+            # Update current pose for the next segment exactly
+            # (Use the exact logic again for the full length to prevent float noise)
+            if abs(k) < 1e-6:
+                x_current = x0 + length * math.cos(th0)
+                y_current = y0 + length * math.sin(th0)
+                theta_current = th0
+            else:
+                d_theta_total = length * k
+                theta_current = self._mod2pi(th0 + d_theta_total)
+                r = 1.0 / k
+                chord = 2.0 * r * math.sin(d_theta_total / 2.0)
+                x_current = x0 + chord * math.cos(th0 + d_theta_total / 2.0)
+                y_current = y0 + chord * math.sin(th0 + d_theta_total / 2.0)
+
         return np.array(path)
 
     # --- Helpers ---

@@ -86,7 +86,7 @@ class UnicycleEnv(gym.Env):
         self.state = np.array([0.0, 0.0, 0.0])
         
         # 2. Random Goal Generation (e.g., within a 5x5 box)
-        self._spaw_goal()
+        self._spawn_goal()
         
         # 3. Initialize Obstacles
         spawn_mode = self.obs_cfg['spawn_mode']
@@ -218,7 +218,7 @@ class UnicycleEnv(gym.Env):
         
         info = {
             "is_success": reached_goal,
-            "collision": collision
+            "collision": collision,
         }
         
         return obs, reward, terminated, truncated, info
@@ -281,7 +281,7 @@ class UnicycleEnv(gym.Env):
 
 
     ''' Private Function that menage the spawn of a random goal.'''
-    def _spaw_goal(self):
+    def _spawn_goal(self):
         # Get World Bounds and Margin
         wb = self.env_cfg['world_bounds']
         margin = self.goal_cfg['spawn_margin']

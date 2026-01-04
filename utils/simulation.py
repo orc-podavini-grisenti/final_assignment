@@ -49,7 +49,9 @@ def run_simulation(env, planner, controller, render=False, max_steps=500):
         ep_errors.append(rho)
 
         # --- C. GET CONTROL & STEP ---
+        # print("SIMULATION: v_ref ", v_ref, " omega_ref ", omega_ref)
         action = controller.get_action(tracking_obs, v_ref=v_ref, omega_ref=omega_ref)
+        # print("SIMULATION: action ", action)
         _, _, terminal, truncated, info = env.step(action)
         
         if render:
@@ -59,13 +61,24 @@ def run_simulation(env, planner, controller, render=False, max_steps=500):
         if dist_to_final >= PARKING_DIST and rho < WAYPOINT_TOLERANCE and path_idx < max_idx:
             path_idx += 1
 
+        if t == max_steps - 1:
+            print("SIMULATION: Truncated aftex max_steps: ", max_steps)
+            truncated = True
+
+
         if terminal or truncated:
+            # print("SIMULATION: terminal")
+            # print("SIMULATION: env is_success", info.get('is_success'))
+            # print("SIMULATION: env collision", info.get('collision'))
+            # print("SIMULATION: env truncated", info.get('truncated')) 
             break
+    
 
     # Compile results
     return {
         "is_success": info.get('is_success', False),
         "collision": info.get('collision', False),
+        "truncated": truncated,
         "distance_error": dist_to_final,
         "mean_error": np.mean(ep_errors),
         "steps": t,
