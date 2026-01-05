@@ -1,15 +1,13 @@
 import numpy as np
 import torch
 
-def run_simulation(env, planner, controller, render=False, max_steps=500):
+def run_simulation(env, obs, info, path, controller, render=False, max_steps=500):
     """
     Core execution logic shared between single-run and evaluation.
     Returns: stats dictionary containing performance metrics.
     """
-    obs, info = env.reset()
     start_pose = env.state
     goal_pose = env.goal
-    path = planner.get_path(start_pose, goal_pose)
     
     if path is None:
         return None
@@ -26,6 +24,17 @@ def run_simulation(env, planner, controller, render=False, max_steps=500):
     PARKING_DIST = 0.3
     
     ep_errors = []
+
+    # Evaluation Metrics
+    metrics = {
+        "cte": [],
+        "linear_vel": [],
+        "angular_vel": [],
+        "positions": [],
+        "sim_time": 0.0,
+        "success": False,
+        "collision": False
+    }
     
     for t in range(max_steps):
         dist_to_final = np.linalg.norm(env.state[:2] - goal_pose[:2])

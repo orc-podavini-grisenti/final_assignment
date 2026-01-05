@@ -6,8 +6,8 @@ class DubinsPlanner:
     Computes the shortest path between two poses (x, y, theta) 
     using Dubins curves (Standard formulation).
     """
-    def __init__(self, curvature_max=1.0, step_size=0.05):
-        self.k_max = curvature_max
+    def __init__(self, curvature=1.0, step_size=0.05):
+        self.k_max = curvature
         self.step_size = step_size
         
         # Primitives definitions

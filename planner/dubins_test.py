@@ -10,7 +10,7 @@ from planner.dubins_planner import DubinsPlanner
 # 1. Setup
 env = UnicycleEnv()
 env.render_mode = "human"  # Enable window
-planner = DubinsPlanner(curvature_max=1.5)
+planner = DubinsPlanner(curvature=1.5)
 
 obs, _ = env.reset()
 
