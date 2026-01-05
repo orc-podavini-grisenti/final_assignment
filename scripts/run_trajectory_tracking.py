@@ -38,12 +38,14 @@ def run_single_demo():
 
     # 2. Initialize Environment & Planner
     env = UnicycleEnv()
-    planner = DubinsPlanner(curvature_max=1, step_size=0.05)
+    env.reset() 
+    planner = DubinsPlanner(curvature=1, step_size=0.05)
+    path = planner.get_path(env.state, env.goal)
     
     # 3. Instantiate the selected controller
     if args.type == "rl":
         print("🔵 Loading RL Controller...")
-        model_path = "outputs/models_saved/experiments/run_20260103_101956/policy_model.pth"
+        model_path = "training/experiments/run_20260105_151445/policy_model.pth"
         controller = RLController(model_path=model_path)
     
     elif args.type == "lyapunov":
@@ -52,7 +54,7 @@ def run_single_demo():
 
     # 4. Run Simulation
     print(f"Starting visual demonstration with {args.type.upper()} controller...")
-    result = run_simulation(env, planner, controller, render=True)
+    result = run_simulation(env, path, controller, render=True)
     
     # 5. Print Results
     if result:

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-def run_simulation(env, obs, info, path, controller, render=False, max_steps=500):
+def run_simulation(env, path, controller, render=False, max_steps=500):
     """
     Core execution logic shared between single-run and evaluation.
     Returns: stats dictionary containing performance metrics.
@@ -61,7 +61,7 @@ def run_simulation(env, obs, info, path, controller, render=False, max_steps=500
         # print("SIMULATION: v_ref ", v_ref, " omega_ref ", omega_ref)
         action = controller.get_action(tracking_obs, v_ref=v_ref, omega_ref=omega_ref)
         # print("SIMULATION: action ", action)
-        _, _, terminal, truncated, info = env.step(action)
+        _, terminal, truncated, info = env.step(action)
         
         if render:
             env.render()
