@@ -1,97 +1,78 @@
-import os
-import json
-import numpy as np
 import argparse
-import matplotlib.pyplot as plt
-from datetime import datetime
-from utils.simulation import run_simulation
-from envs.unicycle_env import UnicycleEnv
-from planner.dubins_planner import DubinsPlanner
-from controllers.rl_controller import RLController
+from evaluation.trajectory_tracking_env import evaluate_single_model, append_to_csv, comparison_analysis, radius_sweep
 
-def sample_radius(mean=1.65, std=0.3, min_r=0.8, max_r=2.5):
-    """Samples a radius using a Gaussian distribution, strictly constrained."""
-    return np.clip(np.random.normal(loc=mean, scale=std), min_r, max_r)
 
-def plot_benchmarks(radii, success_list, error_list):
-    """Generates a graph showing success rate and avg distance related to the radius."""
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+"""
+POLICY EVALUATION & COMPARISON SCRIPT
+-------------------------------------
+This script provides a framework to evaluate trained RL models and compare them against 
+each other using standardized metrics. It operates in two modes:
 
-    success_ints = np.array(success_list).astype(int)
-    color_map = ['red' if s == 0 else 'green' for s in success_ints]
-    ax1.scatter(radii, success_ints, c=color_map, alpha=0.6, label='Episode Result')
-    ax1.set_xlabel('Radius (m)')
-    ax1.set_ylabel('Success (1) / Failure (0)', color='black')
-    ax1.set_yticks([0, 1])
-    ax1.set_yticklabels(['Failure', 'Success'])
+1. SINGLE MODE (--mode single):
+   - Conducts a robust statistical evaluation of a single .pth model file.
+   - Runs a batch of simulations (default 50-100 episodes) with randomized but 
+     reproducible scenarios.
+   - Outputs a detailed performance report and saves results to a centralized CSV 
+     database for long-term tracking.
 
-    ax2 = ax1.twinx()
-    ax2.scatter(radii, error_list, color='blue', marker='x', alpha=0.5, label='Mean Tracking Error')
-    ax2.set_ylabel('Mean Tracking Error (m)', color='blue')
-    
-    if len(radii) > 1:
-        z = np.polyfit(radii, error_list, 1)
-        p = np.poly1d(z)
-        ax2.plot(radii, p(radii), "b--", alpha=0.8, label='Error Trend')
+2. COMPARE MODE (--mode compare):
+   - Aggregates historical data from the 'policy_comparison.csv' file.
+   - Generates a "Leaderboard" ranking models based on a multi-objective hierarchy: 
+     Success Rate > Accuracy (CTE) > Smoothness > Efficiency (Tortuosity).
+   - Produces visualization plots to identify performance gaps between different versions.
 
-    plt.title('Performance Benchmarks vs. Path Radius')
-    fig.tight_layout()
-    
-    os.makedirs("outputs/plots", exist_ok=True)
-    plot_path = f"outputs/plots/bench_graph_{datetime.now().strftime('%m%d_%H%M')}.png"
-    plt.savefig(plot_path)
-    print(f"Graph saved to: {plot_path}")
-    plt.show()
+3. SWEEP MODE (--mode sweep):
+   - Stress-tests a model by incrementally varying the path difficulty (turning radius).
+   - Identifies the "Breaking Point" or the minimum radius a model can handle before 
+     failing.
+   - Useful for defining the operational design domain (ODD) of a specific controller.
 
-def run_benchmark(num_episodes=50, fixed_radius=None):
-    model_path = "outputs/models_saved/experiments/run_20260103_175743/policy_model.pth"
-    env = UnicycleEnv() 
-    controller = RLController(model_path=model_path)
+EXAMPLE USAGE:
+1. SINGLE MODE:  python ./scripts/run_policy_evaluation.py --mode single --model path/to/model.pth --name "v1_baseline"
+2. COMPARE MODE:  python ./scripts/run_policy_evaluation.py --mode compare
+3. SWEEP MODE:    python ./scripts/run_policy_evaluation.py --mode sweep --model path/to/model.pth -min_r 0.7 --max_r 3.0
+"""
 
-    radii_log = []
-    success_log = []
-    error_log = []
-    
-    print(f"Benchmarking {num_episodes} episodes...")
 
-    for i in range(num_episodes):
-        radius = fixed_radius if fixed_radius else sample_radius()
-        k_max = 1.0 / radius
-        planner = DubinsPlanner(curvature_max=k_max, step_size=0.05)
-        
-        # Increased max_steps to 2000 as per your previous observation
-        res = run_simulation(env, planner, controller, render=False, max_steps=2000)
-        
-        if res:
-            radii_log.append(radius)
-            success_log.append(res['is_success'])
-            error_log.append(res['mean_error'])
-            
-        print(f"Progress: {i+1}/{num_episodes} (R: {radius:.2f}m)", end="\r")
 
-    # --- NEW: Summary Calculations ---
-    total_runs = len(success_log)
-    if total_runs > 0:
-        success_count = sum(success_log)
-        success_rate = (success_count / total_runs) * 100
-        avg_distance_error = np.mean(error_log)
-
-        print("\n" + "="*40)
-        print(f"BENCHMARK SUMMARY (N={total_runs})")
-        print("-" * 40)
-        print(f"Success Percentage:      {success_rate:.2f}%")
-        print(f"Average Tracking Error:  {avg_distance_error:.4f} m")
-        print("="*40 + "\n")
-    else:
-        print("\nNo data collected during benchmark.")
-
-    # Generate the Visualization
-    plot_benchmarks(radii_log, success_log, error_log)
-
-if __name__ == "__main__":
+def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--num_episodes", type=int, default=50)
-    parser.add_argument("-r", "--radius", type=float)
-    args = parser.parse_args()
+    parser.add_argument("--mode", type=str, choices=["single", "compare", "sweep"], required=True)
+    parser.add_argument("--model", type=str, help="Path to the .pth model")
+    parser.add_argument("--name", type=str, help="Model alias for CSV")
+    parser.add_argument("--episodes", type=int, default=50)
+    parser.add_argument("--seed", type=int, default=42)
+    
+    # Sweep specific arguments
+    parser.add_argument("--min_r", type=float, default=0.7, help="Minimum radius to test")
+    parser.add_argument("--max_r", type=float, default=2.5, help="Maximum radius to test")
+    parser.add_argument("--steps_r", type=int, default=15, help="Number of radius increments")
+    
+    return parser.parse_args()
 
-    run_benchmark(num_episodes=args.num_episodes, fixed_radius=args.radius)
+
+
+# ==============================================================================
+#  MAIN EXECUTION
+# ==============================================================================
+if __name__ == "__main__":
+    args = get_args()
+
+    if args.mode == "single":
+        if not args.model:
+            print("Error: --model argument is required for single mode.")
+            exit(1)
+            
+        metrics = evaluate_single_model(args.model, args.name, args.episodes, args.seed)
+        
+        if metrics:
+            append_to_csv(metrics)
+
+    elif args.mode == "compare":
+        comparison_analysis()
+    
+    elif args.mode == "sweep":
+        if not args.model:
+            print("Error: --model required for sweep mode.")
+        else:
+            radius_sweep(args.model, args.min_r, args.max_r, args.steps_r, args.seed)

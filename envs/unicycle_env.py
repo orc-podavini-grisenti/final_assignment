@@ -2,6 +2,7 @@ import os
 import cv2
 import math
 import yaml
+import random
 
 import numpy as np
 
@@ -66,6 +67,7 @@ class UnicycleEnv(gym.Env):
         self.goal = np.zeros(3, dtype=np.float32)   # x, y, theta
         self.obstacles = []
         self.current_step = 0
+        self.current_seed = None
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
@@ -77,7 +79,13 @@ class UnicycleEnv(gym.Env):
 
 
     def reset(self, seed=None, options=None):
+        if seed is None:
+            seed = random.randint(0, 10000)
+
         super().reset(seed=seed)
+
+        self.current_seed = seed    # store the seed 
+        # print("DEBUG seed:", seed, "env current_seed", self.current_seed)
         
         # 1. Initialize Robot State (x, y, theta)
         self.state = np.array([0.0, 0.0, 0.0])
@@ -210,6 +218,7 @@ class UnicycleEnv(gym.Env):
         if collision:
             terminated = True
         elif is_success:
+            # print("ENV: Goal Reached!  Distannce to Goal: ", dist_to_final , "  Heading Error: ", heading_error)
             terminated = True
         else:
             terminated = False

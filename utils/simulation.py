@@ -4,7 +4,6 @@ import torch
 
 V_CRUISE = 0.4 
 WAYPOINT_TOLERANCE = 0.1
-PARKING_DIST = 0.3
 
 
 def cross_track_error(position, path):
@@ -99,18 +98,10 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
         rx, ry, rtheta = env.state
         current_pos = np.array([rx, ry])
         
-        # Distance to the very end of the path
-        dist_to_final = np.linalg.norm(current_pos - goal_pose[:2])
-        final_dist = dist_to_final
-        
 
-        # --- A. STRATEGY SELECTION ---
-        if dist_to_final < PARKING_DIST:
-            target_x, target_y, target_theta = goal_pose
-            v_ref, omega_ref = 0.0, 0.0
-        else:
-            target_x, target_y, target_theta, target_k = path[path_idx]
-            v_ref, omega_ref = V_CRUISE, V_CRUISE * target_k
+        # --- A. GET THE STEP TARGET ---
+        target_x, target_y, target_theta, target_k = path[path_idx]
+        v_ref, omega_ref = V_CRUISE, V_CRUISE * target_k
 
 
         # --- B. CONSTRUCT OBSERVATION (For Controller) ---
@@ -142,6 +133,14 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
 
 
         # --- F. CALCULATE METRIX ---
+        # Capture the new Current State
+        rx, ry, rtheta = env.state
+        current_pos = np.array([rx, ry])
+
+        # 0. Distance to the very end of the path
+        dist_to_final = np.linalg.norm(current_pos - goal_pose[:2])
+        final_dist = dist_to_final
+
         # 1. CTE. Calculate the true perpendicular distance to the closest path segment
         real_cte, _ = cross_track_error(current_pos, path)
         metrics["cte"].append(real_cte)  # <--- Now logging the Real CTE
@@ -149,26 +148,25 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
         # 2. Energy: Sum of squares of control inputs
         total_energy += (action[0]**2 + action[1]**2) * dt
 
-        # 2. Smoothness: Change in control (delta action)
+        # 3. Smoothness: Change in control (delta action)
         total_smoothness += np.linalg.norm(action - prev_action)
 
-        # 3. Traveled Distance: For tortuosity
-        curr_pos = np.array(env.state[:2])
-        total_distance_traveled += np.linalg.norm(curr_pos - prev_pos)
+        # 4. Traveled Distance: For tortuosity
+        total_distance_traveled += np.linalg.norm(current_pos - prev_pos)
 
         # Update trackers
         prev_action = action.copy()
-        prev_pos = curr_pos.copy()
+        prev_pos = current_pos.copy()
         
         
         # --- G. WAYPOINT SWITCHING LOGIC --- 
-        if dist_to_final >= PARKING_DIST and rho < WAYPOINT_TOLERANCE and path_idx < max_idx:
+        if rho < WAYPOINT_TOLERANCE and path_idx < max_idx:
             path_idx += 1
 
 
         # --- H. TERMINATION CHECKS ---
         if t == max_steps - 1:
-            print(f"SIMULATION: Truncated after max_steps: {max_steps}")
+            print(f"SIMULATION: Truncated after max_steps: {max_steps}   env seed: {env.current_seed}")
             truncated = True
 
         if terminal or truncated:

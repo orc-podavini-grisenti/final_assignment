@@ -14,16 +14,15 @@ from controllers.rl_controller import RLController
 """
 HOW TO RUN THIS SCRIPT:
 -----------------------
-1. RL only:       $ python run_single_demo.py --type rl
-2. Lyapunov only: $ python run_single_demo.py --type lyapunov
-3. Both:          $ python run_single_demo.py --type both
+1. RL only with specific seed:     $ python ./scripts/run_trajectory_tracking.py --type rl --seed 42
+2. Lyapunov only:                  $ python ./scripts/run_trajectory_tracking.py --type lyapunov --seed 123
+3. Both with same seed:            $ python ./scripts/run_trajectory_tracking.py --type both --seed 65
 """
 
 def get_controller(c_type):
     """Factory function to instantiate the requested controller."""
     if c_type == "rl":
         print("🔵 Loading RL Controller...")
-        # Ensure this path is correct relative to where you run the script
         model_path = "training/experiments/run_20260105_151445/policy_model.pth"
         return RLController(model_path=model_path)
     
@@ -38,33 +37,30 @@ def get_controller(c_type):
 
 def run_visual_episode(controller_type, seed=None):
     """Runs a single simulation episode with the specified controller."""
-    
-    # 1. Initialize Environment & Planner
     env = UnicycleEnv()
     
-    # Passing a seed ensures both controllers solve the exact same scenario 
-    # if run consecutively (assuming UnicycleEnv supports seeding in reset)
+    # Use the provided seed to ensure reproducibility
     if seed is not None:
+        print(f"🎲 Using Seed: {seed}")
         try:
             env.reset(seed=seed)
         except TypeError:
-            env.reset() # Fallback if env doesn't support explicit seed arg
+            # Fallback if env doesn't support seed in reset; 
+            # Note: some envs require random.seed(seed) or np.random.seed(seed)
+            env.reset() 
     else:
         env.reset()
 
     planner = DubinsPlanner(curvature=1, step_size=0.05)
     path = planner.get_path(env.state, env.goal)
 
-    # 2. Instantiate Controller
     controller = get_controller(controller_type)
 
-    # 3. Run Simulation
     print(f"▶️  Starting visual demonstration with {controller_type.upper()}...")
     result = run_simulation(env, path, controller, render=True)
 
-    # 4. Print Organized Results
     if result:
-        # 4.1. Prepare Status String 
+        # Success/Failure logic
         if result["is_success"]:
             status_str = "✅ SUCCESS"
         else:
@@ -75,83 +71,60 @@ def run_visual_episode(controller_type, seed=None):
 
         dt_val = getattr(env, 'dt', 0.05)
 
-        # 4.2. Define All Data Points 
-        # List of tuples: (Label, Value)
         metrics_list = [
             ("Status", status_str),
             ("Sim Time", f"{result['sim_time']:.2f} s"),
             ("Steps", f"{result['steps']} (dt={dt_val})"),
             ("Tortuosity", f"{result.get('tortuosity', 1.0):.3f}"),
-            
             ("Final Dist Error", f"{result['distance_error']:.4f} m"),
             ("Final Heading Error", f"{result['heading_error']:.4f} rad"),
             ("Mean CTE", f"{result['mean_error']:.4f} m"),
             ("Max CTE", f"{result.get('max_error', 0.0):.4f} m"),
-
             ("Avg Linear Vel", f"{result.get('mean_v', 0.0):.2f} m/s"),
             ("Avg Angular Vel", f"{result.get('mean_omega', 0.0):.2f} rad/s"),
             ("Energy", f"{result.get('energy_consumption', 0.0):.2f}"),
             ("Smoothness", f"{result.get('control_smoothness', 0.0):.4f}")
         ]
 
-        # 4.3. Format into Columns (Column-Major Order) 
-        num_columns = 3  # We want 3 pairs of (Metric, Value) horizontally
-        # Calculate required rows: ceil(total_items / num_columns)
+        num_columns = 3
         num_rows = math.ceil(len(metrics_list) / num_columns)
-        
         table_rows = []
         
         for r in range(num_rows):
             row_data = []
             for c in range(num_columns):
-                # Calculate index in the original list: index = col * num_rows + row
                 idx = c * num_rows + r
-                
                 if idx < len(metrics_list):
                     label, value = metrics_list[idx]
                     row_data.extend([label, value])
                 else:
-                    # Pad empty cells if list runs out
                     row_data.extend(["", ""])
-            
             table_rows.append(row_data)
 
-        # 4.4. Print Table 
-        # Create headers: Metric | Value | Metric | Value ...
         headers = ["Metric", "Value"] * num_columns
-        
         print("\n" + tabulate(table_rows, headers=headers, tablefmt="fancy_grid"))
     
-    # Small pause between demos
     time.sleep(1.0)
 
 
 
 
-def run_double_demo():
+def run_double_demo(seed):
     """Runs RL and Lyapunov controllers consecutively on the same scenario."""
     print("\n" + "="*50)
-    print("DOUBLE DEMO MODE: Comparing RL vs Lyapunov")
+    print(f"DOUBLE DEMO MODE: Comparing RL vs Lyapunov (Seed: {seed})")
     print("="*50 + "\n")
 
-    # Pick a fixed seed so they face the same start/goal configuration
-    demo_seed = 42 
-    dynamic_seed = random.randint(0, 10000)
-
     # Run RL
-    run_visual_episode("rl", seed=dynamic_seed)
-    
+    run_visual_episode("rl", seed=seed)
     print("\n" + "-"*30 + "\n")
-    
     # Run Lyapunov
-    run_visual_episode("lyapunov", seed=dynamic_seed)
-
+    run_visual_episode("lyapunov", seed=seed)
 
 
 
 
 def main():
-    # Setup Argument Parser
     parser = argparse.ArgumentParser(description="Run visual demonstrations.")
     parser.add_argument(
         "--type", 
@@ -160,12 +133,24 @@ def main():
         choices=["rl", "lyapunov", "both"],
         help="Choose controller: 'rl', 'lyapunov', or 'both'"
     )
+    # Added Seed Parameter
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed for the environment initialization to ensure reproducibility."
+    )
+    
     args = parser.parse_args()
 
+    # If no seed is provided and we are doing 'both', 
+    # we generate one here so both controllers use the same one.
+    effective_seed = args.seed if args.seed is not None else random.randint(0, 10000)
+
     if args.type == "both":
-        run_double_demo()
+        run_double_demo(seed=effective_seed)
     else:
-        run_visual_episode(args.type)
+        run_visual_episode(args.type, seed=effective_seed)
 
 if __name__ == "__main__":
     main()
