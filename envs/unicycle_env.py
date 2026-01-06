@@ -9,7 +9,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from envs.obstacle import ObstacleManager
-from envs.reward import TrajectoryReward
+from envs.reward import NavigationReward
 
 
 
@@ -54,7 +54,8 @@ class UnicycleEnv(gym.Env):
         )
         
         # --- Observation Space ---
-        obs_dim = 3 + (2 * self.obs_cfg['n_obstacles'])
+        n_rays = self.obs_cfg.get('n_rays', 20)
+        obs_dim = 3 + n_rays
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
@@ -70,7 +71,7 @@ class UnicycleEnv(gym.Env):
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])
-        self.reward_manager = TrajectoryReward()
+        self.reward_manager = NavigationReward()
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
@@ -163,50 +164,34 @@ class UnicycleEnv(gym.Env):
         # Normalize theta to [-pi, pi]
         theta_new = (theta_new + np.pi) % (2 * np.pi) - np.pi
         
-        # Update the state to the new one
+        # 1. Update state and get new observation
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
-
-        # Define the new observable
         obs = self._get_obs()
         
-        # 3. Calculate Rewards and Checks
+        # 2. Check terminal conditions
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
-        
-        # Check Collision
         collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
-        
-        # Check Goal Reached
         reached_goal = distance_to_goal < self.goal_cfg['threshold']
         
-        # Reward Function
-        reward = self.reward_manager.compute_reward(obs, action)
-        
-        # Progress reward (change in distance)
+        # 3. Progress Reward (Change in distance)
+        # This is a very strong signal for PPO
         prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
-        reward += (prev_dist - distance_to_goal) * 10.0
+        progress = (prev_dist - distance_to_goal) * self.reward_manager.w_goal_dist
         
-        # Time penalty
-        reward -= 0.05
+        # 4. Call Reward Manager
+        # We pass progress, collision, and reached_goal into the calculation
+        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal)
+        reward += progress
         
-        if collision:
-            reward -= 20.0
-            terminated = True
-        elif reached_goal:
-            reward += 50.0
-            terminated = True
-        else:
-            terminated = False
-            
-        # Truncation (Time limit)
+        # 5. Determine if episode ends
+        terminated = collision or reached_goal
         truncated = self.current_step >= self.env_cfg['max_steps']
         
-        info = {
-            "is_success": reached_goal,
-            "collision": collision
-        }
-        
-        return obs, reward, terminated, truncated, info
+        # Small time penalty to encourage efficiency
+        reward -= 0.1 
+
+        return obs, reward, terminated, truncated, {"is_success": reached_goal}
 
 
 

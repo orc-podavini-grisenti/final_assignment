@@ -51,3 +51,60 @@ class TrajectoryReward:
                  (self.w_omega * r_smooth) + (self.w_vel * r_vel)
 
         return reward
+
+class NavigationReward:
+    def __init__(self, weights=None):
+        # Navigation weights
+        self.w_goal_dist = 10.0    # Progress toward goal
+        self.w_alignment = 0.8     # Facing the goal
+        self.w_smoothness = 0.1    # Penalize jittery steering
+        
+        # Obstacle avoidance weights
+        # We use an exponential penalty: as distance -> 0, penalty -> infinity
+        self.w_obstacle = 2.0      
+        self.min_safe_dist = 0.6   # Meters: when to start panicking
+
+        if weights is not None:
+            self.w_goal_dist = weights.get('W_GOAL_PROGRESS', self.w_goal_dist)
+            self.w_alignment = weights.get('W_ALIGNMENT', self.w_alignment)
+            self.w_smoothness = weights.get('W_SMOOTHNESS', self.w_smoothness)
+            self.w_obstacle  = weights.get('W_OBSTACLE_DIST', self.w_obstacle)
+        
+    def compute_reward(self, obs, action, collision, reached_goal):
+        """
+        obs: [rho, alpha, d_theta, lidar_1 ... lidar_N]
+        action: [v, omega]
+        """
+        # 1. Extract observation components
+        rho = obs[0]        # Distance to goal
+        alpha = obs[1]      # Angle to goal
+        d_theta = obs[2]    # Orientation error
+        lidar_scan = obs[3:]
+        v, omega = action
+
+        reward = 0.0
+
+        # 2. Obstacle Avoidance (CRITICAL)
+        # Find the single closest point detected by LiDAR
+        min_lidar = np.min(lidar_scan)
+        if min_lidar < self.min_safe_dist:
+            # Exponential penalty: becomes very large as the robot gets closer
+            # (1 - normalized_dist) creates a value that grows as dist shrinks
+            reward -= self.w_obstacle * np.exp(1.0 - min_lidar / self.min_safe_dist)
+
+        # 3. Alignment Reward
+        # Reward being pointed toward the goal, especially when moving
+        # cos(alpha) is 1.0 when facing goal, -1.0 when facing away
+        reward += self.w_alignment * np.cos(alpha) * (v + 0.1)
+
+        # 4. Smoothness
+        # Penalize high angular velocity to prevent "spinning"
+        reward -= self.w_smoothness * np.abs(omega)
+
+        # 5. Terminal Rewards
+        if collision:
+            reward -= 100.0
+        elif reached_goal:
+            reward += 200.0
+            
+        return reward
