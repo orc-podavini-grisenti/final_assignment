@@ -44,10 +44,9 @@ class UnicycleEnv(gym.Env):
         self.goal_cfg = config['goal']        # Goal Configuration
         self.obs_cfg = config['obstacles']    # Obstacle Configuration
         self.rew_cfg = config['rewards']      # Reward Configuration
-        
-        
+
+
         # --- Action Space ---
-        # FIX: Define the arrays explicitly as float32 to match Gymnasium's expectation
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0], dtype=np.float32), 
             high=np.array([1.0, 1.0], dtype=np.float32), 
@@ -63,19 +62,19 @@ class UnicycleEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Internal State (Initialize with float32 for consistency)
+        # --- Internal State ---
         self.state = np.zeros(3, dtype=np.float32) 
         self.goal = np.zeros(3, dtype=np.float32) 
         self.obstacles = []
         self.current_step = 0
 
         # --- Modules ---
-        self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
+        self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])
         self.reward_manager = TrajectoryReward()
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
-        
+
 
 
 
@@ -180,7 +179,7 @@ class UnicycleEnv(gym.Env):
         # Check Goal Reached
         reached_goal = distance_to_goal < self.goal_cfg['threshold']
         
-        # Reward Function (Basic version - can be moved to rewards.py)
+        # Reward Function
         reward = self.reward_manager.compute_reward(obs, action)
         
         # Progress reward (change in distance)
@@ -234,8 +233,9 @@ class UnicycleEnv(gym.Env):
             The difference between the desired goal orientation and current heading.
             Exential to reach the goal with the desired orientation.s
         
-        4. Obstacle Data (d_obs, phi_obs):
-           - Vector of closest obstacles, also in polar coordinates (dist, angle).
+        4. LiDAR Scan [ray_1 ... ray_N]: [0, 1]
+            Distances from a fixed-angle radial sweep.
+            Provides a spatially consistent 'semantic' image of obstacles.
         """
         x, y, theta = self.state
         gx, gy, gtheta = self.goal
@@ -254,16 +254,11 @@ class UnicycleEnv(gym.Env):
         
         obs_vec = [rho, alpha, d_theta]
         
-        # --- Obstacle Observations ---
-        obs_data = self.obstacle_manager.get_closest_obstacles(self.state, self.obs_cfg['n_obstacles'])
-        
-        # Flatten obstacle data
-        flat_obs = []
-        for dist, angle in obs_data:
-            flat_obs.extend([dist, angle])
+        # --- 2. LiDAR Observations ---
+        n_rays = self.obs_cfg.get('n_rays', 20)
+        scan = self.obstacle_manager.get_lidar_scan(self.state, n_rays)
                 
-        return np.array(obs_vec + flat_obs, dtype=np.float32)
-
+        return np.concatenate([obs_vec, scan]).astype(np.float32)
 
 
     ''' Private Function that menage the spawn of a random goal.'''

@@ -250,3 +250,55 @@ class ObstacleManager:
     def get_all_vertices(self) -> List[np.ndarray]:
         """Get all obstacle vertices for rendering."""
         return [obs.vertices for obs in self.obstacles]
+    
+    def get_lidar_scan(self, robot_pos: np.ndarray, n_rays: int) -> np.ndarray:
+        """
+        Computes a fixed-ray LiDAR scan by checking intersections with polygon edges.
+        
+        Args:
+            robot_pos: [x, y, theta]
+            n_rays: Number of rays to cast over 360 degrees
+            
+        Returns:
+            np.ndarray: Distances [0, lidar_range] for each ray
+        """
+        rx, ry, r_theta = robot_pos
+        scan = np.ones(n_rays, dtype=np.float32) * self.lidar_range
+        
+        # Define fixed angles relative to the robot heading (-pi to pi)
+        rel_angles = np.linspace(-np.pi, np.pi, n_rays, endpoint=False)
+        
+        for i, rel_angle in enumerate(rel_angles):
+            abs_angle = r_theta + rel_angle
+            
+            # Ray end point if no obstacle is hit
+            ray_end_x = rx + self.lidar_range * np.cos(abs_angle)
+            ray_end_y = ry + self.lidar_range * np.sin(abs_angle)
+            
+            # Check intersection with every edge of every polygon obstacle
+            for obs in self.obstacles:
+                verts = obs.vertices  # Assumed list of [x, y]
+                for j in range(len(verts)):
+                    p1 = verts[j]
+                    p2 = verts[(j + 1) % len(verts)]
+                    
+                    dist = self._ray_segment_intersection((rx, ry), (ray_end_x, ray_end_y), p1, p2)
+                    if dist is not None:
+                        scan[i] = min(scan[i], dist)
+                        
+        return scan
+
+    def _ray_segment_intersection(self, r_s, r_e, p1, p2):
+        """Standard 2D line segment intersection math."""
+        dx1, dy1 = r_e[0] - r_s[0], r_e[1] - r_s[1]
+        dx2, dy2 = p2[0] - p1[0], p2[1] - p1[1]
+        
+        det = dx1 * dy2 - dy1 * dx2
+        if abs(det) < 1e-6: return None # Parallel
+        
+        t = ((p1[0] - r_s[0]) * dy2 - (p1[1] - r_s[1]) * dx2) / det
+        u = ((p1[0] - r_s[0]) * dy1 - (p1[1] - r_s[1]) * dx1) / det
+        
+        if 0 <= t <= 1 and 0 <= u <= 1:
+            return t * np.sqrt(dx1**2 + dy1**2)
+        return None
