@@ -1,6 +1,8 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+import pandas as pd
 
 def plot_sweep_results(df, model_path, plots_dir='evaluation/output'):
     """Generates a scatter plot for Success/Failure and Error vs Radius."""
@@ -52,3 +54,66 @@ def plot_sweep_results(df, model_path, plots_dir='evaluation/output'):
     plt.savefig(save_path)
     print(f"Sweep plot saved to: {save_path}")
     plt.show()
+
+
+
+
+sns.set_style("whitegrid")
+
+def generate_comparison_boxplots(models, raw_data_dir, plots_dir):
+    """
+    Combines individual model data and creates a boxplot for each metric.
+    """
+    combined_data = []
+
+    # 1. Load data from individual CSV files
+    for model_name in models:
+        file_path = os.path.join(raw_data_dir, f"{model_name}_raw_data.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            df["Controller"] = model_name
+            combined_data.append(df)
+    
+    if not combined_data:
+        print("No raw data found to plot.")
+        return
+
+    full_df = pd.concat(combined_data, ignore_index=True)
+
+    # 2. Filter metrics to plot (exclude non-numeric and success columns)
+    metrics_to_plot = [col for col in full_df.columns if col not in ["Controller", "success", "collision", "Model Name"]]
+
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    for metric in metrics_to_plot:
+        plt.figure(figsize=(8, 6))
+        
+        # FIX: Added 'hue="Controller"' and 'legend=False' to satisfy the deprecation warning
+        sns.boxplot(
+            data=full_df, 
+            x="Controller", 
+            y=metric, 
+            hue="Controller", 
+            palette="Set2", 
+            legend=False
+        )
+        
+        # Overlay the stripplot for data density visualization
+        sns.stripplot(
+            data=full_df, 
+            x="Controller", 
+            y=metric,
+            color="black", 
+            alpha=0.3, 
+            jitter=True
+        )
+        
+        plt.ylabel(metric.replace("_", " ").title())
+        plt.title(f"Performance Distribution: {metric.replace('_', ' ').title()}")
+        plt.xticks(rotation=15)
+        plt.tight_layout()
+        
+        save_path = os.path.join(plots_dir, f"boxplot_{metric}.png")
+        plt.savefig(save_path)
+        plt.close()
+        print(f"Plot saved: {save_path}")

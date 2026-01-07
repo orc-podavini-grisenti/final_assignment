@@ -9,10 +9,12 @@ from tabulate import tabulate
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
 from controllers.rl_controller import RLController
+from controllers.lyapunov_controller import LyapunovController, LyapunovParams
 from utils.simulation import run_simulation  
 
 # --- Import local utils ---
-from evaluation.utils import plot_sweep_results
+from evaluation.utils import plot_sweep_results, generate_comparison_boxplots
+from evaluation.statistics import paired_stat_test
 
 """
 POLICY EVALUATION & COMPARISON SCRIPT
@@ -48,23 +50,30 @@ EXAMPLE USAGE:
 # --- CONSTANTS ---
 CSV_FILE = "evaluation/output/TT_policy_comparison.csv"
 PLOTS_DIR = "evaluation/output"
+RAW_DATA_DIR = "evaluation/output/raw_episode_data"
+
 
 
 # ==============================================================================
 #  1. SINGLE EVALUATION MODE
 # ==============================================================================
-def evaluate_single_model(model_path, model_alias, num_episodes, seed):
+def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=True):
     """
     Runs simulation for a single model, prints a detailed report, and returns aggregated metrics.
     """
     print(f"--> Loading Model: {model_path}")
+    controller = None
     
     # 1. Load Controller
-    try:
-        controller = RLController(model_path=model_path)
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        return None
+    if model_path is not None:
+        try:
+            controller = RLController(model_path=model_path)
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return None
+    else:
+        model_alias = "Lyapunov"
+        controller = LyapunovController(LyapunovParams(2.0, 5.0))
 
     # 2. Setup Environment
     env = UnicycleEnv()
@@ -124,6 +133,14 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed):
     avg_tortuosity = np.mean(results["tortuosity"])
     avg_velocity = np.mean(results["velocity"])
     avg_energy = np.mean(results["energy"])
+
+    # Standard Deviation Calculations (New)
+    std_steps = np.std(results["steps"])
+    std_cte = np.std(results["cte"])
+    std_smoothness = np.std(results["smoothness"])
+    std_tortuosity = np.std(results["tortuosity"])
+    std_velocity = np.std(results["velocity"])
+    std_energy = np.std(results["energy"])
     
     # 4. PREPARE THE TABULAR DISPLAY
     
@@ -138,16 +155,16 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed):
     # 4.2. Define Data Points (Label, Value)
     metrics_list = [
         ("Status", status_str),
-        ("Steps (Avg)", f"{avg_steps}"),
         ("Success Rate", f"{success_rate:.1f} %"),
+        ("Steps (Avg)", f"{avg_steps:.1f} ± {std_steps:.1f}"),
         
-        ("Mean CTE", f"{avg_cte:.4f} m"),
+        ("Mean CTE", f"{avg_cte:.4f} ± {std_cte:.4f} m"),
         ("Max CTE (Avg)", f"{max_cte_avg:.4f} m"),
-        ("Tortuosity", f"{avg_tortuosity:.3f}"),
+        ("Tortuosity", f"{avg_tortuosity:.3f} ± {std_tortuosity:.3f}"),
         
-        ("Avg Velocity", f"{avg_velocity:.2f} m/s"),
-        ("Smoothness", f"{avg_smoothness:.4f}"),
-        ("Avg Energy", f"{avg_energy:.2f}")
+        ("Avg Velocity", f"{avg_velocity:.2f} ± {std_velocity:.2f} m/s"),
+        ("Smoothness", f"{avg_smoothness:.4f} ± {std_smoothness:.4f}"),
+        ("Avg Energy", f"{avg_energy:.2f} ± {std_energy:.2f}")
     ]
 
     # 4.3. Format into Columns (3 Columns Wide)
@@ -167,12 +184,13 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed):
         table_rows.append(row_data)
 
     # 4.4. Print Table
-    headers = ["Metric", "Value"] * num_columns
-    print("\n" + "="*60)
-    print(f" EVALUATION REPORT: {model_alias if model_alias else 'Unknown Model'}")
-    print("="*60)
-    print(tabulate(table_rows, headers=headers, tablefmt="fancy_grid"))
-    print("\n")
+    if verbose: 
+        headers = ["Metric", "Value"] * num_columns
+        print("\n" + "="*60)
+        print(f" EVALUATION REPORT: {model_alias if model_alias else 'Unknown Model'}")
+        print("="*60)
+        print(tabulate(table_rows, headers=headers, tablefmt="fancy_grid"))
+        print("\n")
 
     # Return dictionary for CSV saving
     agg_metrics = {
@@ -181,13 +199,38 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed):
         "Episodes": total_runs,
         "Success Rate (%)": success_rate,
         "Mean Steps": avg_steps,
+        "Std Steps": std_steps,
         "Collision Rate (%)": np.mean(results["collision"]) * 100,
+        
         "Mean CTE (m)": avg_cte,
+        "Std CTE (m)": np.std(results["cte"]),
+        "Max CTE (m)": max_cte_avg,
+    
         "Avg Smoothness": avg_smoothness,
+        "Std Smoothness": std_smoothness,
+
         "Avg Tortuosity": avg_tortuosity,
+        "Std Tortuosity": std_tortuosity,
+
         "Avg Velocity (m/s)": avg_velocity,
+        "Std Velocity (m/s)": std_velocity,
+
+        "Avg Energy (J)": avg_energy,
+        "Std Energy (J)": std_energy,
+
         "Model Path": model_path 
     }
+
+    # Save Raw Data for Stats (crucial for Wilcoxon)
+    df_raw = pd.DataFrame(results)
+    name = model_alias if model_alias else "Unknown"
+    raw_path = "evaluation/output/raw_episode_data/" + name + "_raw_data.csv"
+    
+    if not os.path.exists(raw_path):
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+
+    df_raw.to_csv(raw_path, index=False)
+
 
     return agg_metrics
 
@@ -215,43 +258,105 @@ def append_to_csv(metrics, csv_file = CSV_FILE):
 # ==============================================================================
 #  2. COMPARISON MODE (Unchanged)
 # ==============================================================================
-def comparison_analysis(csv_file = CSV_FILE):
+def comparison_analysis(csv_file=CSV_FILE):
     if not os.path.exists(csv_file):
         print(f"No comparison file found at {csv_file}. Run 'single' mode first.")
         return
 
     df = pd.read_csv(csv_file)
-    
     if df.empty:
         print("CSV is empty.")
         return
 
-    # Sort Leaderboard
-    leaderboard = df.sort_values(
-        by=["Success Rate (%)", "Mean CTE (m)", "Avg Smoothness", "Avg Tortuosity", "Mean Steps"], 
-        ascending=[False, True, True, True, True]
-    )
+    # 1. Group by Model Name to get the latest run for each
+    df_latest = df.sort_values('Date').groupby('Model Name').tail(1)
+    models = df_latest["Model Name"].unique()
 
+    # 2. Define the metrics we want to compare
+    # Map raw CSV column names to human-readable row labels
+    metric_map = {
+        "Success Rate (%)": ("Success Rate", "%"),
+        "Mean Steps": ("Avg Steps", "steps"),
+        "Mean CTE (m)": ("Mean CTE", "m"),
+        "Avg Smoothness": ("Smoothness", ""),
+        "Avg Tortuosity": ("Tortuosity", ""),
+        "Avg Velocity (m/s)": ("Avg Velocity", "m/s"),
+        "Avg Energy (J)": ("Avg Energy", "J")
+    }
+
+    # 3. Build the Comparative Table
+    comparison_data = []
+    
+    for csv_col, (label, unit) in metric_map.items():
+        row = [label]
+        # Find corresponding Std Dev column in your CSV structure
+        std_col = csv_col.replace("Mean", "Std").replace("Avg", "Std")
+        
+        for _, model_row in df_latest.iterrows():
+            mean_val = model_row[csv_col]
+            
+            # Formatting logic
+            if csv_col == "Success Rate (%)" or csv_col == "Avg Steps":
+                cell_text = f"{mean_val:.1f}%"
+            elif std_col in df.columns:
+                std_val = model_row[std_col]
+                cell_text = f"{mean_val:.4f} ± {std_val:.4f} {unit}".strip()
+            else:
+                cell_text = f"{mean_val:.4f} {unit}".strip()
+                
+            row.append(cell_text)
+        comparison_data.append(row)
+
+    # 4. Define Headers
+    headers = ["Metric"] + df_latest["Model Name"].tolist()
+
+    # 5. Print the Leaderboard
     print("\n" + "="*100)
-    print(" POLICY COMPARISON LEADERBOARD")
+    print(" MULTI-CONTROLLER PERFORMANCE COMPARISON")
     print("="*100)
-    print_cols = ["Model Name", "Success Rate (%)", "Mean CTE (m)", "Avg Smoothness", "Avg Tortuosity", "Mean Steps"]
-    print(leaderboard[print_cols].to_string(index=False))
+    print(tabulate(comparison_data, headers=headers, tablefmt="fancy_grid"))
     print("="*100 + "\n")
 
-    # Generate Comparison Plots
-    os.makedirs(PLOTS_DIR, exist_ok=True)
+    # 6. Statistical Analysis
+    if os.path.exists(RAW_DATA_DIR):
+        print("\n" + "="*80)
+        print(" STATISTICAL SIGNIFICANCE ANALYSIS (Reference vs Others)")
+        print("="*80)
+
+        # Define metrics to analyze statistically
+        raw_metrics = ["success", "cte", "smoothness", "tortuosity", "steps", "energy"]
+
+        # We use the first model in the list as the baseline reference
+        baseline = 'Lyapunov'
+        b_path = os.path.join(RAW_DATA_DIR, f"{baseline}_raw_data.csv")
+        
+        if os.path.exists(b_path):
+            df_b = pd.read_csv(b_path)
+            
+            # Compare every other model against the baseline
+            targets = [m for m in models if "Lyapunov" not in m]
+            
+            for target in targets:
+                t_path = os.path.join(RAW_DATA_DIR, f"{target}_raw_data.csv")
+                
+                if os.path.exists(t_path):
+                    df_t = pd.read_csv(t_path)
+                    # FIX: Cast values to float to avoid boolean subtraction errors
+                    paired_stat_test(df_b, df_t, raw_metrics, baseline, target)
+                else:
+                    print(f"Skipping {target}: Raw data file not found.")
+        else:
+            print(f"Baseline raw data ({baseline}) not found for statistical test.")
     
-    plt.figure(figsize=(10, 6))
-    plt.bar(df["Model Name"], df["Success Rate (%)"], color='skyblue', edgecolor='black')
-    plt.axhline(y=100, color='r', linestyle='--', alpha=0.3)
-    plt.ylabel("Success Rate (%)")
-    plt.title("Reliability Comparison")
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig(f"{PLOTS_DIR}/comparison_success.png")
-    
-    print(f"Plots saved to {PLOTS_DIR}/")
+    # 7. Plotting
+    # At the end of the function:
+    if len(models) >= 2:
+        print("\n📊 Generating comparative boxplots...")
+        generate_comparison_boxplots(
+            models=models, 
+            raw_data_dir=RAW_DATA_DIR, 
+            plots_dir=os.path.join(PLOTS_DIR, "boxplots")
+        )
 
 
 

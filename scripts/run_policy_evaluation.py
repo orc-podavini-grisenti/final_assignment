@@ -1,6 +1,5 @@
 import argparse
-from evaluation.trajectory_tracking_env import evaluate_single_model, append_to_csv, comparison_analysis, radius_sweep
-
+from evaluation.controllers_evaluation import evaluate_single_model, append_to_csv, comparison_analysis, radius_sweep
 
 """
 POLICY EVALUATION & COMPARISON SCRIPT
@@ -38,7 +37,7 @@ EXAMPLE USAGE:
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, choices=["single", "compare", "sweep"], required=True)
-    parser.add_argument("--model", type=str, help="Path to the .pth model")
+    parser.add_argument("--model", type=str, help="Path to the .pth model", default=None)
     parser.add_argument("--name", type=str, help="Model alias for CSV")
     parser.add_argument("--episodes", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
@@ -60,8 +59,7 @@ if __name__ == "__main__":
 
     if args.mode == "single":
         if not args.model:
-            print("Error: --model argument is required for single mode.")
-            exit(1)
+            print("Info: without a model the lyapunov controller will be used.")
             
         metrics = evaluate_single_model(args.model, args.name, args.episodes, args.seed)
         
