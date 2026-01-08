@@ -54,10 +54,10 @@ RAW_DATA_DIR = "evaluation/output/raw_episode_data"
 
 
 
-# ==============================================================================
+# =======================================================================================================================
 #  1. SINGLE EVALUATION MODE
-# ==============================================================================
-def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=True):
+# =======================================================================================================================
+def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=True, save_csv=True, txt_file_path=None):
     """
     Runs simulation for a single model, prints a detailed report, and returns aggregated metrics.
     """
@@ -183,14 +183,20 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
                 row_data.extend(["", ""])
         table_rows.append(row_data)
 
+    headers = ["Metric", "Value"] * num_columns
+    report_title = f" EVALUATION REPORT: {model_alias if model_alias else 'Unknown Model'}"
+    table_output = tabulate(table_rows, headers=headers, tablefmt="fancy_grid")
+
     # 4.4. Print Table
     if verbose: 
-        headers = ["Metric", "Value"] * num_columns
-        print("\n" + "="*60)
-        print(f" EVALUATION REPORT: {model_alias if model_alias else 'Unknown Model'}")
-        print("="*60)
-        print(tabulate(table_rows, headers=headers, tablefmt="fancy_grid"))
-        print("\n")
+        print(f"\n{'='*60}\n{report_title}\n{'='*60}\n{table_output}\n")
+        
+    if txt_file_path:
+        full_report = f"\n{'='*60}\n{report_title}\n{'='*60}\n{table_output}\n"
+        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
+        with open(txt_file_path, "w", encoding="utf-8") as f:
+            f.write(full_report)
+        print(f"Report saved to text file: {txt_file_path}")
 
     # Return dictionary for CSV saving
     agg_metrics = {
@@ -221,6 +227,9 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
         "Model Path": model_path 
     }
 
+    if not save_csv:
+        return None
+
     # Save Raw Data for Stats (crucial for Wilcoxon)
     df_raw = pd.DataFrame(results)
     name = model_alias if model_alias else "Unknown"
@@ -230,7 +239,6 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
         os.makedirs(os.path.dirname(raw_path), exist_ok=True)
 
     df_raw.to_csv(raw_path, index=False)
-
 
     return agg_metrics
 
