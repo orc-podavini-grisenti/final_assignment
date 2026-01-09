@@ -77,7 +77,6 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
 
     # 2. Setup Environment
     env = UnicycleEnv()
-    np.random.seed(seed) # Ensure scenarios are reproducible
     
     # Storage for raw run data
     results = {
@@ -89,15 +88,16 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
     print(f"Starting {num_episodes} episodes...")
 
     for i in range(num_episodes):
-        # Generate Scenario
-        radius = np.clip(np.random.normal(1.65, 0.3), 0.8, 2.5)
-        k_max = 1.0 / radius
-        
         # Reset the environment with a unique but reproducible seed per episode
         # This ensures Episode 1 is always the same for every model, 
         # but Episode 1 is different from Episode 2.
         episode_seed = seed + i 
         env.reset(seed=episode_seed)
+        np.random.seed(seed) # Ensure scenarios are reproducible
+
+        # Generate Scenario
+        radius = np.clip(np.random.normal(1.65, 0.3), 0.8, 2.5)
+        k_max = 1.0 / radius
 
         planner = DubinsPlanner(curvature=k_max, step_size=0.05)
         path = planner.get_path(env.state, env.goal)
@@ -334,28 +334,25 @@ def comparison_analysis(csv_file=CSV_FILE):
         # Define metrics to analyze statistically
         raw_metrics = ["success", "cte", "smoothness", "tortuosity", "steps", "energy"]
 
-        # We use the first model in the list as the baseline reference
-        baseline = 'Lyapunov'
-        b_path = os.path.join(RAW_DATA_DIR, f"{baseline}_raw_data.csv")
-        
-        if os.path.exists(b_path):
-            df_b = pd.read_csv(b_path)
-            
-            # Compare every other model against the baseline
-            targets = [m for m in models if "Lyapunov" not in m]
-            
-            for target in targets:
-                t_path = os.path.join(RAW_DATA_DIR, f"{target}_raw_data.csv")
-                
-                if os.path.exists(t_path):
-                    df_t = pd.read_csv(t_path)
-                    # FIX: Cast values to float to avoid boolean subtraction errors
-                    paired_stat_test(df_b, df_t, raw_metrics, baseline, target)
+        # Iterate through all models to create pairs
+        for i in range(len(models)):
+            for j in range(i + 1, len(models)):
+                model_a_name = models[i]
+                model_b_name = models[j]
+
+                path_a = os.path.join(RAW_DATA_DIR, f"{model_a_name}_raw_data.csv")
+                path_b = os.path.join(RAW_DATA_DIR, f"{model_b_name}_raw_data.csv")
+
+                if os.path.exists(path_a) and os.path.exists(path_b):
+                    df_a = pd.read_csv(path_a)
+                    df_b = pd.read_csv(path_b)
+                    
+                    # The function handles the paired t-tests/Wilcoxon tests for the metrics
+                    paired_stat_test(df_a, df_b, raw_metrics, model_a_name, model_b_name)
                 else:
-                    print(f"Skipping {target}: Raw data file not found.")
-        else:
-            print(f"Baseline raw data ({baseline}) not found for statistical test.")
-    
+                    missing = model_a_name if not os.path.exists(path_a) else model_b_name
+                    print(f"Skipping pair ({model_a_name}, {model_b_name}): {missing} raw data not found.")
+        
     # 7. Plotting
     # At the end of the function:
     if len(models) >= 2:
@@ -406,6 +403,6 @@ def radius_sweep(model_path, min_r, max_r, steps, seed):
             print(f"Radius {r:.2f}m: {status} | CTE: {res['mean_error']:.4f}")
 
     df_sweep = pd.DataFrame(sweep_results)
-    plot_sweep_results(df_sweep, model_path, plots_dir = model_path)
+    plot_sweep_results(df_sweep, model_path)
     return df_sweep
 

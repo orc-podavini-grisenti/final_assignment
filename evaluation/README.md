@@ -10,11 +10,18 @@ By default, running without a model path evaluates the analytical Lyapunov contr
 ```console
 python ./scripts/run_policy_evaluation.py --mode single
 ```
-### B) Evaluate RL Policies
+### B) Evaluate RL Policies ( without baseline )
 To evaluate a trained model, provide the path to the policy file and a custom name for the report.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode single --model training/v1_no_baseline/policy_model.pth --name v1_no_baseline
+python ./scripts/run_policy_evaluation.py --mode single --model training/v1_no_baseline/policy_model.ph --name v1_no_baseline
+```
+
+### C) Evaluate RL Policies ( with baseline )
+To evaluate a trained model, provide the path to the policy file and a custom name for the report.
+
+```console
+python ./scripts/run_policy_evaluation.py --mode single --model training/v2_baseline/policy_model.ph --name v2_baseline
 ```
 
 
@@ -37,7 +44,9 @@ Max Curve Test (Radius Sweep)
 To test how the controller handles different path curvatures, run a radius sweep. This will test the model across a range of radii and plot the success/error curves.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode sweep --model training/v1_no_baseline/policy_model.pth
+python ./scripts/run_policy_evaluation.py --mode sweep --model training/v1_no_baseline/policy_model.ph
+
+python ./scripts/run_policy_evaluation.py --mode sweep --model training/v2_baseline/policy_model.ph
 ```
 
 ## Output Structure

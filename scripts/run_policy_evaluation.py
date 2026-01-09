@@ -30,6 +30,10 @@ EXAMPLE USAGE:
 1. SINGLE MODE:  python ./scripts/run_policy_evaluation.py --mode single --model path/to/model.pth --name "v1_baseline"
 2. COMPARE MODE:  python ./scripts/run_policy_evaluation.py --mode compare
 3. SWEEP MODE:    python ./scripts/run_policy_evaluation.py --mode sweep --model path/to/model.pth -min_r 0.7 --max_r 3.0
+
+NB: To run the exact evaluation made by us follow the instruction on the README.md file that 
+    you can find in the evaluation directory
+
 """
 
 

@@ -2,6 +2,8 @@ import argparse
 import time
 import math
 import random
+import os
+import numpy as np
 from tabulate import tabulate
 from utils.simulation import run_simulation
 from envs.unicycle_env import UnicycleEnv
@@ -12,18 +14,46 @@ from controllers.lyapunov_controller import LyapunovController, LyapunovParams
 from controllers.rl_controller import RLController
 
 """
+WHAT THE SCRIPT DOES:
+--------------------
+This script executes a single trajectory tracking simulation for a unicycle robot. 
+It allows you to compare a classical Lyapunov-based controller against a 
+trained Reinforcement Learning (RL) policy. 
+
+It is particularly useful for:
+- Debugging: Visualizing how a specific controller behaves in real-time.
+- Scenario Testing: Using the --seed parameter to reproduce exact environment 
+  initializations (robot start pose and goal location) to see how different 
+  controllers handle the same challenge.
+
+  
 HOW TO RUN THIS SCRIPT:
 -----------------------
-1. RL only with specific seed:     $ python ./scripts/run_trajectory_tracking.py --type rl --seed 42
-2. Lyapunov only:                  $ python ./scripts/run_trajectory_tracking.py --type lyapunov --seed 123
-3. Both with same seed:            $ python ./scripts/run_trajectory_tracking.py --type both --seed 65
+1. RL only with specific model and seed: 
+   $ python ./scripts/run_trajectory_tracking.py --type rl --model v1_no_baseline --seed 1
+
+2. Lyapunov only: 
+   $ python ./scripts/run_trajectory_tracking.py --type lyapunov --seed 123
+
+3. Both with a specific model and seed: 
+   $ python ./scripts/run_trajectory_tracking.py --type both --model v1_no_baseline --seed 65
 """
 
-def get_controller(c_type):
+def get_controller(c_type, model_name=None):
     """Factory function to instantiate the requested controller."""
     if c_type == "rl":
-        print("🔵 Loading RL Controller...")
-        model_path = "training/experiments/run_20260105_151445/policy_model.pth"
+        # Default fallback if no model is provided
+        if not model_name:
+            model_name = "v1_no_baseline"
+            
+        # Path: training/<model_name>/policy_model.pth
+        model_path = os.path.join("training", model_name, "policy_model.ph")
+        
+        print(f"🔵 Loading RL Controller from: {model_path}")
+        
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Could not find model at {model_path}")
+            
         return RLController(model_path=model_path)
     
     elif c_type == "lyapunov":
@@ -33,42 +63,32 @@ def get_controller(c_type):
     return None
 
 
-
-
-def run_visual_episode(controller_type, seed=None):
+def run_visual_episode(controller_type, seed=None, model_name=None):
     """Runs a single simulation episode with the specified controller."""
     env = UnicycleEnv()
+    np.random.seed(seed) # Ensure scenarios are reproducible
     
-    # Use the provided seed to ensure reproducibility
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
         try:
             env.reset(seed=seed)
         except TypeError:
-            # Fallback if env doesn't support seed in reset; 
-            # Note: some envs require random.seed(seed) or np.random.seed(seed)
             env.reset() 
     else:
         env.reset()
 
-    planner = DubinsPlanner(curvature=1, step_size=0.05)
+    radius = np.clip(np.random.normal(1.65, 0.3), 0.8, 2.5)
+    k_max = 1.0 / radius
+    planner = DubinsPlanner(curvature=k_max, step_size=0.05)
     path = planner.get_path(env.state, env.goal)
 
-    controller = get_controller(controller_type)
+    controller = get_controller(controller_type, model_name=model_name)
 
     print(f"▶️  Starting visual demonstration with {controller_type.upper()}...")
     result = run_simulation(env, path, controller, render=True)
 
     if result:
-        # Success/Failure logic
-        if result["is_success"]:
-            status_str = "✅ SUCCESS"
-        else:
-            reasons = []
-            if result.get("truncated"): reasons.append("Time Limit")
-            if result.get("collision"): reasons.append("Collision")
-            status_str = f"❌ FAILED ({', '.join(reasons)})" if reasons else "❌ FAILED"
-
+        status_str = "✅ SUCCESS" if result["is_success"] else "❌ FAILED"
         dt_val = getattr(env, 'dt', 0.05)
 
         metrics_list = [
@@ -89,7 +109,6 @@ def run_visual_episode(controller_type, seed=None):
         num_columns = 3
         num_rows = math.ceil(len(metrics_list) / num_columns)
         table_rows = []
-        
         for r in range(num_rows):
             row_data = []
             for c in range(num_columns):
@@ -107,21 +126,15 @@ def run_visual_episode(controller_type, seed=None):
     time.sleep(1.0)
 
 
-
-
-def run_double_demo(seed):
+def run_double_demo(seed, model_name):
     """Runs RL and Lyapunov controllers consecutively on the same scenario."""
     print("\n" + "="*50)
     print(f"DOUBLE DEMO MODE: Comparing RL vs Lyapunov (Seed: {seed})")
     print("="*50 + "\n")
 
-    # Run RL
-    run_visual_episode("rl", seed=seed)
+    run_visual_episode("rl", seed=seed, model_name=model_name)
     print("\n" + "-"*30 + "\n")
-    # Run Lyapunov
     run_visual_episode("lyapunov", seed=seed)
-
-
 
 
 def main():
@@ -133,24 +146,27 @@ def main():
         choices=["rl", "lyapunov", "both"],
         help="Choose controller: 'rl', 'lyapunov', or 'both'"
     )
-    # Added Seed Parameter
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
         help="Seed for the environment initialization to ensure reproducibility."
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Directory name inside 'training/' containing 'policy_model.pth'"
+    )
     
     args = parser.parse_args()
 
-    # If no seed is provided and we are doing 'both', 
-    # we generate one here so both controllers use the same one.
     effective_seed = args.seed if args.seed is not None else random.randint(0, 10000)
 
     if args.type == "both":
-        run_double_demo(seed=effective_seed)
+        run_double_demo(seed=effective_seed, model_name=args.model)
     else:
-        run_visual_episode(args.type, seed=effective_seed)
+        run_visual_episode(args.type, seed=effective_seed, model_name=args.model)
 
 if __name__ == "__main__":
     main()

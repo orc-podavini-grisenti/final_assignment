@@ -50,7 +50,7 @@ def plot_sweep_results(df, model_path, plots_dir='evaluation/output'):
 
     fig.tight_layout()
     
-    save_path = f"{plots_dir}/sweep_scatter_{name.replace('.pth','')}.png"
+    save_path = f"{plots_dir}/sweep_scatter_{name.replace('.ph','')}.png"
     plt.savefig(save_path)
     print(f"Sweep plot saved to: {save_path}")
     plt.show()
