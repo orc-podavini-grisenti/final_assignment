@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import imageio
 
 
 V_CRUISE = 0.4 
@@ -40,7 +41,7 @@ def cross_track_error(position, path):
 
 
 
-def run_simulation(env, path, controller, render=False, max_steps=500):
+def run_simulation(env, path, controller, render=False, max_steps=500, video_path=None):
     """
     Core execution logic shared between single-run and evaluation.
     Returns: dictionary containing summary stats and full time-series metrics.
@@ -54,6 +55,10 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
     if render:
         env.render_mode = "human"
         env.set_render_trajectory(path[:, :2])
+    
+    # Frame buffer for video
+    frames = []
+    save_video = video_path is not None
     
     
     # Initialize the Step Metrics Containers 
@@ -117,7 +122,16 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
         action = controller.get_action(tracking_obs, v_ref=v_ref, omega_ref=omega_ref)
         # update the render
         if render:
-            env.render()
+            # If we are saving a video, we need the RGB array
+            if save_video:
+                # Capture frame for video (ensure render_mode is "rgb_array")
+                frame = env.render()
+                if frame is not None:
+                    frame = frame[:, :, ::-1]
+                    frames.append(frame)
+            else:
+                # Normal human visualization
+                env.render()
         
 
         # --- D. LOG METRICS --- 
@@ -178,7 +192,16 @@ def run_simulation(env, path, controller, render=False, max_steps=500):
             goal_theta = env.goal[2]
             final_heading_error = np.arctan2(np.sin(current_theta - goal_theta), np.cos(current_theta - goal_theta))
             break
-            
+    
+
+    # --- SAVE VIDEO ---
+    if save_video and len(frames) > 0:
+        dt = env.env_cfg.get("dt", 0.05) 
+        fps = int(1 / dt)
+
+        print(f"🎬 Saving video at {fps} FPS to match real-time...")
+        imageio.mimsave(video_path, frames, fps=fps)
+
 
     # --- FINAL RETURN ---
     return {

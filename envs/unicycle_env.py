@@ -32,7 +32,7 @@ class UnicycleEnv(gym.Env):
             # Default to config/env.yaml relative to this file
             current_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(current_dir) 
-            config_path = os.path.join(project_root, 'configs', 'env.yaml')
+            config_path = os.path.join(project_root, 'configs', 'empty_env.yaml')
 
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -42,7 +42,6 @@ class UnicycleEnv(gym.Env):
         self.rob_cfg = config['robot']          # Robot Configuration
         self.goal_cfg = config['goal']        # Goal Configuration
         self.obs_cfg = config['obstacles']    # Obstacle Configuration
-        self.rew_cfg = config['rewards']      # Reward Configuration
         
         
         # --- Action Space ---

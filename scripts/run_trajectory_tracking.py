@@ -37,6 +37,8 @@ HOW TO RUN THIS SCRIPT:
 
 3. Both with a specific model and seed: 
    $ python ./scripts/run_trajectory_tracking.py --type both --model v1_no_baseline --seed 65
+
+NB: add the final parameter --save_video to store the video of the episode
 """
 
 def get_controller(c_type, model_name=None):
@@ -63,10 +65,10 @@ def get_controller(c_type, model_name=None):
     return None
 
 
-def run_visual_episode(controller_type, seed=None, model_name=None):
+def run_visual_episode(controller_type, seed=None, model_name=None, save_video=False):
     """Runs a single simulation episode with the specified controller."""
     env = UnicycleEnv()
-    np.random.seed(seed) # Ensure scenarios are reproducible
+    np.random.seed(seed) 
     
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
@@ -84,13 +86,29 @@ def run_visual_episode(controller_type, seed=None, model_name=None):
 
     controller = get_controller(controller_type, model_name=model_name)
 
+    # Prepare video recording parameters
+    video_path = None
+    if save_video:
+        os.makedirs("_documentations/videos", exist_ok=True)
+        # Construct filename
+        filename = f"{controller_type}"
+        if model_name:
+            filename += f"_{model_name}"
+        filename += f"_seed{seed}.mp4"
+        
+        video_path = os.path.join("_documentations/videos", filename)
+        print(f"📹 Video path set to: {video_path}")
+
     print(f"▶️  Starting visual demonstration with {controller_type.upper()}...")
-    result = run_simulation(env, path, controller, render=True)
+    
+    # Pass the video path to the simulation runner
+    # (Assuming run_simulation supports a 'video_path' or similar argument)
+    result = run_simulation(env, path, controller, render=True, video_path=video_path)
 
     if result:
+        # ... [Metric printing logic remains the same] ...
         status_str = "✅ SUCCESS" if result["is_success"] else "❌ FAILED"
         dt_val = getattr(env, 'dt', 0.05)
-
         metrics_list = [
             ("Status", status_str),
             ("Sim Time", f"{result['sim_time']:.2f} s"),
@@ -125,48 +143,29 @@ def run_visual_episode(controller_type, seed=None, model_name=None):
     
     time.sleep(1.0)
 
-
-def run_double_demo(seed, model_name):
-    """Runs RL and Lyapunov controllers consecutively on the same scenario."""
-    print("\n" + "="*50)
-    print(f"DOUBLE DEMO MODE: Comparing RL vs Lyapunov (Seed: {seed})")
-    print("="*50 + "\n")
-
-    run_visual_episode("rl", seed=seed, model_name=model_name)
-    print("\n" + "-"*30 + "\n")
-    run_visual_episode("lyapunov", seed=seed)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Run visual demonstrations.")
+    parser.add_argument("--type", type=str, default="rl", choices=["rl", "lyapunov", "both"])
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--model", type=str, default=None)
+    
+    # NEW FLAG ADDED HERE
     parser.add_argument(
-        "--type", 
-        type=str, 
-        default="rl", 
-        choices=["rl", "lyapunov", "both"],
-        help="Choose controller: 'rl', 'lyapunov', or 'both'"
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Seed for the environment initialization to ensure reproducibility."
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Directory name inside 'training/' containing 'policy_model.pth'"
+        "--save_video", 
+        action="store_true", 
+        help="If set, saves the simulation as an .mp4 file in the '_documentations/videos/' folder."
     )
     
     args = parser.parse_args()
-
     effective_seed = args.seed if args.seed is not None else random.randint(0, 10000)
 
     if args.type == "both":
-        run_double_demo(seed=effective_seed, model_name=args.model)
+        print(f"\nDOUBLE DEMO MODE: Comparing RL vs Lyapunov (Seed: {effective_seed})")
+        run_visual_episode("rl", seed=effective_seed, model_name=args.model, save_video=args.save_video)
+        print("\n" + "-"*30 + "\n")
+        run_visual_episode("lyapunov", seed=effective_seed, save_video=args.save_video)
     else:
-        run_visual_episode(args.type, seed=effective_seed, model_name=args.model)
+        run_visual_episode(args.type, seed=effective_seed, model_name=args.model, save_video=args.save_video)
 
 if __name__ == "__main__":
     main()

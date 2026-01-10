@@ -29,11 +29,11 @@ robot:
 obstacles:
   # Mode: 'random' or 'fixed'
   # If 'random': Obstacles are spawned randomly within world_bounds
-  spawn_mode: "random" 
+  # spawn_mode: "random" 
   # If 'fixed': Obstacles are spawned at the coordinates listed below
-  # spawn_mode: "fixed" 
+  spawn_mode: "fixed" 
   
-  n_obstacles: 4        # Number of obstacles to spawn (ignored if fixed)
+  n_obstacles: 3        # Number of obstacles to spawn (ignored if fixed)
   lidar_range: 3.0      # Max detection range for the robot's sensors
   min_clearance: 0.5    # Min distance between obstacles and robot/goal at spawn
   
@@ -59,10 +59,11 @@ obstacles:
 goal:
   # Mode: 'random' or 'fixed'
   # If 'random': Goal are spawned randomly within world_bounds
-  spawn_mode: "random" 
+  # spawn_mode: "random" 
   # If 'fixed': Obstacles are spawned at the coordinates listed below
-  # spawn_mode: "fixed"
+  spawn_mode: "fixed"
 
+  threshold: 0.1          # meters (e.g., 10cm) - min distance between goal and obstacle
   dist_threshold: 0.1    # meters (e.g., 10cm)
   angle_threshold: 0.2   # radians (approx 11 degrees)
 

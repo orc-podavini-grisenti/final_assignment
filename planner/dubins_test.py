@@ -27,6 +27,7 @@ else:
     print(f"Path found with {len(path)} waypoints.")
     # 3. Inject into environment
     env.set_render_trajectory(path)
+    env.render()
 
 # 4. Wait loop to visualize
 print("Press any key to close window...")
