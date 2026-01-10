@@ -24,12 +24,6 @@ class LyapunovController:
 
 
     def get_action(self, obs, v_ref=0.0, omega_ref=0.0):
-        """
-        Args:
-            obs: [rho, alpha, d_theta]
-            v_ref: Feed-forward linear velocity (default 0 for parking)
-            omega_ref: Feed-forward angular velocity (default 0 for parking)
-        """
         rho = obs[0]
         alpha = obs[1]
         d_theta = obs[2]
@@ -37,21 +31,24 @@ class LyapunovController:
         exy = rho 
         etheta = -d_theta 
 
-        # If we are tracking a moving target (Dubins), use the provided v_ref
-        # If we are parking (Static), calculate a slowing-down profile
+        # 1. Determine Feed-Forward Velocity
         if v_ref == 0.0:
-             v_d = 0.5 * np.tanh(rho) # Approach logic
+             v_d = 0.5 * np.tanh(rho)
         else:
-             v_d = v_ref # Tracking logic
+             v_d = v_ref 
 
         omega_d = omega_ref 
 
-        # --- Control Law ---
+        # 2. Control Law (Keep your original logic!)
+        # We KEEP the braking logic here so the robot "wants" to slow down
         dv = self.K_P * exy * np.cos(alpha)
         
         arg_sin = (alpha + np.pi) + 0.5 * etheta
         cos_half_etheta = np.cos(etheta / 2.0)
-        if abs(cos_half_etheta) < 1e-3: cos_half_etheta = 1e-3
+        
+        # Avoid division by zero
+        if abs(cos_half_etheta) < 1e-3: 
+            cos_half_etheta = 1e-3 * np.sign(cos_half_etheta)
             
         tracking_term = -v_d * exy * (1.0 / cos_half_etheta) * np.sin(arg_sin)
         stabilization_term = -self.K_THETA * np.sin(etheta)
@@ -60,6 +57,16 @@ class LyapunovController:
 
         v = v_d + dv
         omega = omega_d + domega
+
+        # 3. CRITICAL FIX: The Minimum Speed Floor
+        # If the controller wants to stop or reverse (v <= 0), we force a 
+        # tiny positive velocity (e.g., 0.05 or 10% of v_ref).
+        # This keeps the robot moving just enough for 'omega' to turn it.
+        
+        min_velocity = 0.05  # Adjust this (e.g., 0.05 m/s)
+        
+        if v < min_velocity:
+            v = min_velocity
 
         # Normalize for Gym (assuming limits v=[0,1], w=[-1.5, 1.5])
         v_norm = np.interp(v, [0.0, 1.0], [-1.0, 1.0])

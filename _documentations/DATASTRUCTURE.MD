@@ -35,13 +35,15 @@ final_assignemnt/
 │   └── ppo.py
 │
 ├── training/      # Scripts to train the policy and evaluate it
+│   ├── reinforcment.ipynb      # noteboock for training the TT trajectory
 │   ├── train_ppo.py
 │   └── evaluate.py
 │
 ├── utils/
 │   ├── math_utils.py
 │   ├── logger.py
-│   ├── normalization.py
+│   ├── normalization.py    # normalize the input of the networks
+│   ├── simulation.py       # run a single simulation on the enviroment
 │   └── visualization.py
 │
 ├── logs/
@@ -51,7 +53,7 @@ final_assignemnt/
 │   └── ppo/
 │
 └── scripts/
-    ├── run_dubins_execution.sh    
-    ├── run_training.sh
-    └── run_eval.sh
+    ├── run_controller_benchmark.py  # benchmark between RL Policy - Lyapunov Controller    
+    ├── run_policy_evaluation.sh              
+    └── run_trajectory_tracking.sh
 ```

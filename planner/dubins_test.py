@@ -10,7 +10,7 @@ from planner.dubins_planner import DubinsPlanner
 # 1. Setup
 env = UnicycleEnv()
 env.render_mode = "human"  # Enable window
-planner = DubinsPlanner(curvature_max=1.5)
+planner = DubinsPlanner(curvature=1.5)
 
 obs, _ = env.reset()
 
@@ -27,13 +27,10 @@ else:
     print(f"Path found with {len(path)} waypoints.")
     # 3. Inject into environment
     env.set_render_trajectory(path)
+    env.render()
 
 # 4. Wait loop to visualize
-print("Press SPACE to start stepping...")
-while True:
-    env.render()
-    
-    # Wait for space key (32) to step, or Esc (27) to exit
-    key = cv2.waitKey(10)
-    if key == 27: # ESC
-        break
+print("Press any key to close window...")
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()

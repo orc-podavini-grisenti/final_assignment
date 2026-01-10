@@ -1,2 +1,7 @@
 .venv
 **/__pycache__/
+.DS_Store
+
+# Ignore the local training results
+/training/tt_network_reinforce.pth
+/training/experiments

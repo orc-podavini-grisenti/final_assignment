@@ -33,7 +33,7 @@ obstacles:
   # If 'fixed': Obstacles are spawned at the coordinates listed below
   # spawn_mode: "fixed" 
   
-  n_obstacles: 4        # Number of obstacles to spawn (ignored if fixed)
+  n_obstacles: 0        # Number of obstacles to spawn (ignored if fixed)
   lidar_range: 3.0      # Max detection range for the robot's sensors
   min_clearance: 0.5    # Min distance between obstacles and robot/goal at spawn
   
