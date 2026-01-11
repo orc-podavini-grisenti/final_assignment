@@ -3,7 +3,7 @@ from simulation import run_simulation
 def run_single_demo():
     from envs.unicycle_env import UnicycleEnv
     from planner.dubins_planner import DubinsPlanner
-    from controllers.rl_controller import RLController
+    from controllers.tt_controller import RLController
 
     env = UnicycleEnv()
     planner = DubinsPlanner(curvature_max=1, step_size=0.05)

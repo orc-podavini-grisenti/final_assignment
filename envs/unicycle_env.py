@@ -25,7 +25,7 @@ class UnicycleEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, config_path=None):
+    def __init__(self, config_path=None, reward_weights=None):
         super(UnicycleEnv, self).__init__()
 
         # --- 1. Load Configuration ---
@@ -71,10 +71,13 @@ class UnicycleEnv(gym.Env):
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])
-        self.reward_manager = NavigationReward()
+        self.reward_manager = NavigationReward(weights=reward_weights)
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
+
+        self.progress_balance = 0
+        self.reward_balance = 0
 
 
 
@@ -124,6 +127,10 @@ class UnicycleEnv(gym.Env):
             
         self.current_step = 0
         
+        self.progress_balance = 0
+        self.reward_balance = 0
+        
+
         return self._get_obs(), {}
 
 
@@ -171,9 +178,18 @@ class UnicycleEnv(gym.Env):
         
         # 2. Check terminal conditions
         distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
-        collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
-        reached_goal = distance_to_goal < self.goal_cfg['threshold']
         
+        # --- Define a heading threshold in your config or hardcode it ---
+
+        # Check Goal Reached (Now requiring both Position AND Orientation)
+        distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
+        # Normalize d_theta to [-pi, pi]
+        d_theta = (self.goal[2] - self.state[2] + np.pi) % (2 * np.pi) - np.pi
+
+        reached_goal = (distance_to_goal < self.goal_cfg['threshold']) and (abs(d_theta) < self.goal_cfg['heading_threshold'])
+
+        collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
+
         # 3. Progress Reward (Change in distance)
         # This is a very strong signal for PPO
         prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
@@ -182,7 +198,11 @@ class UnicycleEnv(gym.Env):
         # 4. Call Reward Manager
         # We pass progress, collision, and reached_goal into the calculation
         reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal)
+        self.reward_balance += reward
         reward += progress
+        self.progress_balance += progress
+
+        # reward -= 0.5 # time penalty
         
         # 5. Determine if episode ends
         terminated = collision or reached_goal
@@ -191,7 +211,12 @@ class UnicycleEnv(gym.Env):
         # Small time penalty to encourage efficiency
         reward -= 0.1 
 
-        return obs, reward, terminated, truncated, {"is_success": reached_goal}
+        info = {
+            "is_success": reached_goal,
+            "collision": collision
+        }
+
+        return obs, reward, terminated, truncated, info
 
 
 

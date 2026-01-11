@@ -54,57 +54,46 @@ class TrajectoryReward:
 
 class NavigationReward:
     def __init__(self, weights=None):
-        # Navigation weights
-        self.w_goal_dist = 10.0    # Progress toward goal
-        self.w_alignment = 0.8     # Facing the goal
-        self.w_smoothness = 0.1    # Penalize jittery steering
-        
-        # Obstacle avoidance weights
-        # We use an exponential penalty: as distance -> 0, penalty -> infinity
-        self.w_obstacle = 2.0      
-        self.min_safe_dist = 0.6   # Meters: when to start panicking
+        self.w_goal_dist = 10.0   
+        self.w_alignment = 1.0     
+        self.w_smoothness = 0.05   
+        self.w_obstacle = 5.0      # Increased for a stronger "pessimistic" signal
+        self.min_safe_dist = 0.5
 
         if weights is not None:
             self.w_goal_dist = weights.get('W_GOAL_PROGRESS', self.w_goal_dist)
             self.w_alignment = weights.get('W_ALIGNMENT', self.w_alignment)
             self.w_smoothness = weights.get('W_SMOOTHNESS', self.w_smoothness)
             self.w_obstacle  = weights.get('W_OBSTACLE_DIST', self.w_obstacle)
+            self.min_safe_dist = weights.get('W_MIN_SAFE_DIST', self.w_obstacle)
         
     def compute_reward(self, obs, action, collision, reached_goal):
-        """
-        obs: [rho, alpha, d_theta, lidar_1 ... lidar_N]
-        action: [v, omega]
-        """
-        # 1. Extract observation components
-        rho = obs[0]        # Distance to goal
-        alpha = obs[1]      # Angle to goal
-        d_theta = obs[2]    # Orientation error
+        rho, alpha, d_theta = obs[0:3]
         lidar_scan = obs[3:]
         v, omega = action
 
         reward = 0.0
 
-        # 2. Obstacle Avoidance (CRITICAL)
-        # Find the single closest point detected by LiDAR
+        # 1. OBSTACLE AVOIDANCE (The Negative Lower Bound)
         min_lidar = np.min(lidar_scan)
         if min_lidar < self.min_safe_dist:
-            # Exponential penalty: becomes very large as the robot gets closer
-            # (1 - normalized_dist) creates a value that grows as dist shrinks
+            # Strong exponential penalty to ensure the agent values safety over all else
             reward -= self.w_obstacle * np.exp(1.0 - min_lidar / self.min_safe_dist)
 
-        # 3. Alignment Reward
-        # Reward being pointed toward the goal, especially when moving
-        # cos(alpha) is 1.0 when facing goal, -1.0 when facing away
-        reward += self.w_alignment * np.cos(alpha) * (v + 0.1)
+        # 2. PROGRESS-GATED ALIGNMENT (Prevents Spinning)
+        # We only reward facing the goal if the robot is actually moving forward (v > 0)
+        if v > 0.1:
+            reward += self.w_alignment * np.cos(alpha) * v
+        else:
+            # Penalize sitting still or moving backward while facing away
+            reward -= 0.1
 
-        # 4. Smoothness
-        # Penalize high angular velocity to prevent "spinning"
+        # 3. SMOOTHNESS 
+        # Encourages stable first-order optimization by penalizing jerky rotations
         reward -= self.w_smoothness * np.abs(omega)
 
-        # 5. Terminal Rewards
-        if collision:
-            reward -= 100.0
-        elif reached_goal:
-            reward += 200.0
-            
+        # 4. STEP PENALTY
+        # Similar to Atari benchmarks that favor fast learning [cite: 275]
+        reward -= 0.05 
+
         return reward
