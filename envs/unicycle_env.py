@@ -75,9 +75,11 @@ class UnicycleEnv(gym.Env):
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
+        self.second_trajectory_buffer = None
 
         self.progress_balance = 0
         self.reward_balance = 0
+        self.was_near = False
 
 
 
@@ -132,8 +134,9 @@ class UnicycleEnv(gym.Env):
         self.progress_balance = 0
         self.reward_balance = 0
         
+        self.was_near = False
 
-        return self._get_obs(), {}
+        return self.get_obs(), {}
 
 
 
@@ -156,7 +159,7 @@ class UnicycleEnv(gym.Env):
         # 1. Update state and get new observation
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
-        obs = self._get_obs()
+        obs = self.get_obs()
         curr_dist = np.linalg.norm(self.state[:2] - self.goal[:2])
         
         # Terminals [cite: 139, 189]
@@ -164,11 +167,17 @@ class UnicycleEnv(gym.Env):
         reached_goal = (curr_dist < self.goal_cfg['threshold']) and (abs(d_theta) < self.goal_cfg['heading_threshold'])
         collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
 
+        too_far = False
+        is_near = curr_dist < self.reward_manager.d_transition
+        if self.was_near and not is_near and not reached_goal:
+            too_far = True
+        self.was_near = is_near
+
         # Centralized Reward Calculation
         prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
-        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal, prev_dist, curr_dist)
+        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal, too_far, prev_dist, curr_dist)
         
-        terminated = collision or reached_goal
+        terminated = collision or reached_goal or too_far
         truncated = self.current_step >= self.env_cfg['max_steps']
         info = {
             "is_success": reached_goal,
@@ -179,7 +188,7 @@ class UnicycleEnv(gym.Env):
 
 
     ''' Constructs the observation vector. '''
-    def _get_obs(self):
+    def get_obs(self):
         """
         Constructs the Ego-Centric Observation Vector.
         
@@ -256,11 +265,26 @@ class UnicycleEnv(gym.Env):
         
         # Random spawn modality:
         else:
-            self.goal = np.array([
-                self.np_random.uniform(g_x_min, g_x_max),
-                self.np_random.uniform(g_y_min, g_y_max),
-                self.np_random.uniform(-np.pi, np.pi)
-            ], dtype=np.float32)
+            import numpy as np
+
+            # Define your exclusion radius
+            min_dist = 1.0  # Adjust this value as needed
+            min_dist_sq = min_dist**2  # Using squared distance is computationally cheaper
+
+            while True:
+                # 1. Sample potential coordinates
+                x = self.np_random.uniform(g_x_min, g_x_max)
+                y = self.np_random.uniform(g_y_min, g_y_max)
+                
+                # 2. Check if the point is outside the excluded radius
+                if (x**2 + y**2) > min_dist_sq:
+                    # 3. If valid, assign the goal and break the loop
+                    self.goal = np.array([
+                        x, 
+                        y, 
+                        self.np_random.uniform(-np.pi, np.pi)
+                    ], dtype=np.float32)
+                    break
 
 
 
@@ -321,8 +345,20 @@ class UnicycleEnv(gym.Env):
             pts = np.array(path_pixels, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(canvas, [pts], isClosed=False, color=(255, 255, 0), thickness=2)
+        
+        if self.second_trajectory_buffer is not None and len(self.second_trajectory_buffer) > 0:
+            # Convert world points to pixel points
+            path_pixels = []
+            for pt in self.second_trajectory_buffer:
+                # pt is assumed to be [x, y, ...]
+                path_pixels.append(to_pixel(pt[0], pt[1]))
+            
+            # Draw as a polyline (Cyan color)
+            pts = np.array(path_pixels, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(canvas, [pts], isClosed=False, color=(0, 255, 0), thickness=2)
 
-        # 5. Display (Optional: Only works if you have a GUI/X11)
+        # 6. Display (Optional: Only works if you have a GUI/X11)
         # If running in headless Docker, you might want to return the array instead.
         if self.render_mode == "human":
             cv2.imshow("Unicycle Nav", canvas)
@@ -331,9 +367,10 @@ class UnicycleEnv(gym.Env):
         return canvas
     
 
-    def set_render_trajectory(self, path):
+    def set_render_trajectory(self, path, second_path=False):
         """
         Sets a trajectory (list of [x, y] or [x, y, theta]) to be visualized.
         Call this from your main script after calculating the path.
         """
-        self.trajectory_buffer = path
+        if not second_path: self.trajectory_buffer = path 
+        else: self.second_trajectory_buffer = path 

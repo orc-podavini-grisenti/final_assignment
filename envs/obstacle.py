@@ -4,17 +4,15 @@ from dataclasses import dataclass
 
 @dataclass
 class Obstacle:
-    """Represents a polygonal obstacle defined by a set of vertices."""
     vertices: np.ndarray  # Shape (N, 2)
+    center: np.ndarray = None
+    radius: float = None
     
     def __post_init__(self):
         self.vertices = np.array(self.vertices, dtype=np.float32)
-        if len(self.vertices.shape) != 2 or self.vertices.shape[1] != 2:
-            raise ValueError("Vertices must be Nx2 array")
-    
-    @property
-    def center(self) -> np.ndarray:
-        return np.mean(self.vertices, axis=0)
+        # Calculate these once and store them
+        self.center = np.mean(self.vertices, axis=0)
+        self.radius = np.max(np.linalg.norm(self.vertices - self.center, axis=1))
 
     @classmethod
     def create_circle(cls, center: Tuple[float, float], radius: float, num_vertices: int = 12):
@@ -252,39 +250,58 @@ class ObstacleManager:
         return [obs.vertices for obs in self.obstacles]
     
     def get_lidar_scan(self, robot_pos: np.ndarray, n_rays: int) -> np.ndarray:
-        """
-        Computes a fixed-ray LiDAR scan by checking intersections with polygon edges.
-        
-        Args:
-            robot_pos: [x, y, theta]
-            n_rays: Number of rays to cast over 360 degrees
-            
-        Returns:
-            np.ndarray: Distances [0, lidar_range] for each ray
-        """
         rx, ry, r_theta = robot_pos
-        scan = np.ones(n_rays, dtype=np.float32) * self.lidar_range
-        
-        # Define fixed angles relative to the robot heading (-pi to pi)
         rel_angles = np.linspace(-np.pi, np.pi, n_rays, endpoint=False)
+        abs_angles = r_theta + rel_angles
         
-        for i, rel_angle in enumerate(rel_angles):
-            abs_angle = r_theta + rel_angle
+        # All ray directions: Shape (n_rays, 2)
+        ray_directions = np.stack([np.cos(abs_angles), np.sin(abs_angles)], axis=1)
+        scan = np.ones(n_rays, dtype=np.float32) * self.lidar_range
+        origin = np.array([rx, ry])
+
+        for obs in self.obstacles:
+            # Quick circle-based early exit
+            dist_to_obs = np.linalg.norm(obs.center - origin)
+            poly_radius = obs.radius
+            if dist_to_obs > self.lidar_range + poly_radius:
+                continue 
+
+            verts = obs.vertices
+            p1 = verts
+            p2 = np.roll(verts, -1, axis=0)
+            edge_vecs = p2 - p1 # Shape (n_edges, 2)
+
+            # Using broadcasting to solve for all rays vs all edges of this obstacle
+            # Ray: O + t*D = P1 + u*E
+            # Solve the 2x2 system for each ray-edge pair
+            # Matrix form: [D, -E] * [t, u]^T = P1 - O
             
-            # Ray end point if no obstacle is hit
-            ray_end_x = rx + self.lidar_range * np.cos(abs_angle)
-            ray_end_y = ry + self.lidar_range * np.sin(abs_angle)
+            # Reshape for broadcasting: 
+            # rays: (n_rays, 1, 2), edges: (1, n_edges, 2)
+            D = ray_directions[:, np.newaxis, :] 
+            E = edge_vecs[np.newaxis, :, :]
+            P1_O = (p1 - origin)[np.newaxis, :, :]
+
+            # Determinant: dx1*dy2 - dy1*dx2
+            # (n_rays, n_edges)
+            det = D[..., 0] * E[..., 1] - D[..., 1] * E[..., 0]
             
-            # Check intersection with every edge of every polygon obstacle
-            for obs in self.obstacles:
-                verts = obs.vertices  # Assumed list of [x, y]
-                for j in range(len(verts)):
-                    p1 = verts[j]
-                    p2 = verts[(j + 1) % len(verts)]
-                    
-                    dist = self._ray_segment_intersection((rx, ry), (ray_end_x, ray_end_y), p1, p2)
-                    if dist is not None:
-                        scan[i] = min(scan[i], dist)
+            # Avoid division by zero
+            mask = np.abs(det) > 1e-6
+            
+            # t = ((P1_O_x * E_y) - (P1_O_y * E_x)) / det
+            t = (P1_O[..., 0] * E[..., 1] - P1_O[..., 1] * E[..., 0]) / det
+            # u = ((P1_O_x * D_y) - (P1_O_y * D_x)) / det
+            u = (P1_O[..., 0] * D[..., 1] - P1_O[..., 1] * D[..., 0]) / det
+
+            # Intersection is valid if 0 <= t <= lidar_range AND 0 <= u <= 1
+            valid = mask & (t >= 0) & (t <= self.lidar_range) & (u >= 0) & (u <= 1)
+            
+            # Update scan with minimum t for each ray across all edges of this obstacle
+            # We fill invalid entries with lidar_range so they don't affect the np.min
+            t_masked = np.where(valid, t, self.lidar_range)
+            min_t_per_ray = np.min(t_masked, axis=1)
+            scan = np.minimum(scan, min_t_per_ray)
                         
         return scan
 
