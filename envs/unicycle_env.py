@@ -85,6 +85,8 @@ class UnicycleEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
+        self.reward_manager.reset_history()
+
         # 1. Initialize Robot State (x, y, theta)
         self.state = np.array([0.0, 0.0, 0.0])
         
@@ -119,7 +121,7 @@ class UnicycleEnv(gym.Env):
                 bounds=self.env_cfg['world_bounds'],
                 robot_pos=self.state,
                 goal_pos=self.goal,
-                min_clearance=0.5,
+                min_clearance=1,
                 np_random=self.np_random
             )
             # NB: We don't need to check that the goal collide with obstacle; becouse generate_random_obstacles
@@ -136,31 +138,11 @@ class UnicycleEnv(gym.Env):
 
 
     def step(self, action):
-        """
-        Updates the robot state based on the provided action.
-
-        Args:
-            action (np.ndarray): A 1D array of shape (2,) containing 
-                [v_raw, w_raw] in the range [-1, 1].
-
-        Returns:
-            tuple: A tuple containing:
-                - observation (np.ndarray): The new state representation.
-                - reward (float): The scalar reward value after the step.
-                - terminated (bool): Whether the episode has ended (goal or collision).
-                - truncated (bool): Whether the episode ended due to time limits.
-                - info (dict): Diagnostic information (success, collision flags).
-        """
-        # 1. Unpack and Scale Actions
-        # Map [-1, 1] to physical limits
+        # Kinematics
         v_raw, w_raw = action
         v = np.interp(v_raw, [-1, 1], [ self.rob_cfg['v_min'], self.rob_cfg['v_max'] ])
         w = np.interp(w_raw, [-1, 1], [ self.rob_cfg['w_min'], self.rob_cfg['w_max'] ])
-        
-        # 2. Apply Kinematics (Unicycle Model)
-        # x_dot = v * cos(theta)
-        # y_dot = v * sin(theta)
-        # theta_dot = w
+
         x, y, theta = self.state
         dt = self.env_cfg['dt']
 
@@ -175,52 +157,25 @@ class UnicycleEnv(gym.Env):
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
         obs = self._get_obs()
+        curr_dist = np.linalg.norm(self.state[:2] - self.goal[:2])
         
-        # 2. Check terminal conditions
-        distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
-        
-        # --- Define a heading threshold in your config or hardcode it ---
-
-        # Check Goal Reached (Now requiring both Position AND Orientation)
-        distance_to_goal = np.linalg.norm(self.state[:2] - self.goal[:2])
-        # Normalize d_theta to [-pi, pi]
+        # Terminals [cite: 139, 189]
         d_theta = (self.goal[2] - self.state[2] + np.pi) % (2 * np.pi) - np.pi
-
-        reached_goal = (distance_to_goal < self.goal_cfg['threshold']) and (abs(d_theta) < self.goal_cfg['heading_threshold'])
-
+        reached_goal = (curr_dist < self.goal_cfg['threshold']) and (abs(d_theta) < self.goal_cfg['heading_threshold'])
         collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
 
-        # 3. Progress Reward (Change in distance)
-        # This is a very strong signal for PPO
+        # Centralized Reward Calculation
         prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
-        progress = (prev_dist - distance_to_goal) * self.reward_manager.w_goal_dist
+        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal, prev_dist, curr_dist)
         
-        # 4. Call Reward Manager
-        # We pass progress, collision, and reached_goal into the calculation
-        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal)
-        self.reward_balance += reward
-        reward += progress
-        self.progress_balance += progress
-
-        # reward -= 0.5 # time penalty
-        
-        # 5. Determine if episode ends
         terminated = collision or reached_goal
         truncated = self.current_step >= self.env_cfg['max_steps']
-        
-        # Small time penalty to encourage efficiency
-        reward -= 1 
-
-        if reached_goal:
-            reward += 1000
-
         info = {
             "is_success": reached_goal,
             "collision": collision
         }
 
         return obs, reward, terminated, truncated, info
-
 
 
     ''' Constructs the observation vector. '''

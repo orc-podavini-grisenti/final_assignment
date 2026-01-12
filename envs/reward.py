@@ -51,52 +51,65 @@ class TrajectoryReward:
                  (self.w_omega * r_smooth) + (self.w_vel * r_vel)
 
         return reward
-
+    
+    
 class NavigationReward:
     def __init__(self, weights=None):
-        self.w_goal_dist = 10.0   
-        self.w_alignment = 1.0     
-        self.w_smoothness = 0.05   
-        self.w_obstacle = 5.0      # Increased for a stronger "pessimistic" signal
-        self.min_safe_dist = 0.5
-
-        if weights is not None:
-            self.w_goal_dist = weights.get('W_GOAL_PROGRESS', self.w_goal_dist)
-            self.w_alignment = weights.get('W_ALIGNMENT', self.w_alignment)
-            self.w_smoothness = weights.get('W_SMOOTHNESS', self.w_smoothness)
-            self.w_obstacle  = weights.get('W_OBSTACLE_DIST', self.w_obstacle)
-            self.min_safe_dist = weights.get('W_MIN_SAFE_DIST', self.w_obstacle)
+        # Parameters for the Active Obstacle Zone
+        self.min_safe_dist = 0.5    # Deep danger threshold
+        self.warning_dist = 0.9     # Border where penalty/reward begins
         
-    def compute_reward(self, obs, action, collision, reached_goal):
+        # Reward Weights
+        self.w_goal_dist = 10.0     # Dense progress signal [cite: 136]
+        self.w_alignment = 1.0      # Orientation matching [cite: 189]
+        self.w_obs_approach = 8.0   # Pessimistic approach penalty 
+        self.w_obs_escape = 5.0     # Active escape reward
+        self.w_success = 1000.0     # Terminal success bonus [cite: 161]
+        
+        self.prev_min_dist = None
+        # Storage for debugging/plotting components
+        self.history = {'total': [], 'progress': [], 'obstacle': [], 'alignment': []}
+
+    def compute_reward(self, obs, action, collision, reached_goal, prev_dist, curr_dist):
         rho, alpha, d_theta = obs[0:3]
+        lidar_scan = obs[3:] 
         v, omega = action
+        
+        # 1. Progress Component (Moved from step logic) [cite: 136]
+        progress_rew = (prev_dist - curr_dist) * self.w_goal_dist
+        
+        # 2. Smart Obstacle Zone Logic
+        obs_rew = 0.0
+        curr_min_dist = np.min(lidar_scan)
+        if curr_min_dist < self.warning_dist:
+            # Linear intensity ramp (0 at border to 1 at deep danger)
+            intensity = np.clip((self.warning_dist - curr_min_dist) / 
+                               (self.warning_dist - self.min_safe_dist), 0, 1)
+            
+            if self.prev_min_dist is not None:
+                delta_obs = curr_min_dist - self.prev_min_dist
+                # Heavier penalty for approach than reward for escape to prevent farming
+                weight = self.w_obs_escape if delta_obs > 0 else self.w_obs_approach
+                obs_rew = delta_obs * weight * intensity
+        self.prev_min_dist = curr_min_dist
 
-        reward = 0.0
+        # 3. Alignment and Final Orientation [cite: 189]
+        align_rew = self.w_alignment * np.cos(d_theta)
+        if rho < 0.5: align_rew -= 0.5 * v  # Penalize speed near goal
 
-        # 1. ENCOURAGE SLOWING DOWN NEAR GOAL
-        # If the robot is very close (rho < threshold), we penalize high velocity
-        # This forces the robot to 'stabilize' rather than 'shoot through'
-        if rho < 0.5:
-            reward -= 0.5 * v  # Penalty for moving too fast when close
+        # 4. Terminal Events [cite: 139, 161]
+        terminal_rew = self.w_success if reached_goal else (-500.0 if collision else 0.0)
 
-        # 2. ALIGNMENT REWARD (Dynamic)
-        # Instead of just cos(alpha), reward matching the FINAL d_theta
-        # This gives a signal even if the robot is sitting on the goal
-        reward += self.w_alignment * np.cos(d_theta)
+        # Combine into Total and log components
+        total = progress_rew + obs_rew + align_rew + terminal_rew - 0.1 # Step penalty
+        
+        self.history['total'].append(total)
+        self.history['progress'].append(progress_rew)
+        self.history['obstacle'].append(obs_rew)
+        self.history['alignment'].append(align_rew)
+        
+        return total
 
-        # 3. THE "GOLDEN" SUCCESS BONUS
-        # The paper uses high rewards for success in benchmarks[cite: 161, 162].
-        # Reaching the goal with the correct orientation should be 
-        # the single largest reward the robot can ever receive.
-        if reached_goal:
-            reward += 1000.0  # Massive bonus for satisfying both constraints
-        elif rho < 0.3:
-            # "Participation trophy" for getting the position right, 
-            # but much smaller than the full success.
-            reward += 10.0 
-
-        # 4. STEP PENALTY (Efficiency)
-        # This prevents the robot from 'dancing' around the goal to farm alignment points.
-        reward -= 0.1 
-
-        return reward
+    def reset_history(self):
+        self.prev_min_dist = None
+        for key in self.history: self.history[key] = []
