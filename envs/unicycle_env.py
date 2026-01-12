@@ -75,6 +75,7 @@ class UnicycleEnv(gym.Env):
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
+        self.second_trajectory_buffer = None
 
         self.progress_balance = 0
         self.reward_balance = 0
@@ -133,7 +134,7 @@ class UnicycleEnv(gym.Env):
         self.reward_balance = 0
         
 
-        return self._get_obs(), {}
+        return self.get_obs(), {}
 
 
 
@@ -156,7 +157,7 @@ class UnicycleEnv(gym.Env):
         # 1. Update state and get new observation
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
-        obs = self._get_obs()
+        obs = self.get_obs()
         curr_dist = np.linalg.norm(self.state[:2] - self.goal[:2])
         
         # Terminals [cite: 139, 189]
@@ -179,7 +180,7 @@ class UnicycleEnv(gym.Env):
 
 
     ''' Constructs the observation vector. '''
-    def _get_obs(self):
+    def get_obs(self):
         """
         Constructs the Ego-Centric Observation Vector.
         
@@ -321,6 +322,18 @@ class UnicycleEnv(gym.Env):
             pts = np.array(path_pixels, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(canvas, [pts], isClosed=False, color=(255, 255, 0), thickness=2)
+        
+        if self.second_trajectory_buffer is not None and len(self.second_trajectory_buffer) > 0:
+            # Convert world points to pixel points
+            path_pixels = []
+            for pt in self.second_trajectory_buffer:
+                # pt is assumed to be [x, y, ...]
+                path_pixels.append(to_pixel(pt[0], pt[1]))
+            
+            # Draw as a polyline (Cyan color)
+            pts = np.array(path_pixels, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(canvas, [pts], isClosed=False, color=(0, 255, 0), thickness=2)
 
         # 6. Display (Optional: Only works if you have a GUI/X11)
         # If running in headless Docker, you might want to return the array instead.
@@ -331,9 +344,10 @@ class UnicycleEnv(gym.Env):
         return canvas
     
 
-    def set_render_trajectory(self, path):
+    def set_render_trajectory(self, path, second_path=False):
         """
         Sets a trajectory (list of [x, y] or [x, y, theta]) to be visualized.
         Call this from your main script after calculating the path.
         """
-        self.trajectory_buffer = path
+        if not second_path: self.trajectory_buffer = path 
+        else: self.second_trajectory_buffer = path 

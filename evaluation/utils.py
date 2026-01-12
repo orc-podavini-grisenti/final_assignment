@@ -131,7 +131,7 @@ def print_nav_evaluation_report(df_raw, model_alias, verbose=True):
     avg_steps, std_steps = df_raw["steps"].mean(), df_raw["steps"].std()
     avg_energy, std_energy = df_raw["energy"].mean(), df_raw["energy"].std()
     avg_safety, std_safety = df_raw["safety"].mean(), df_raw["safety"].std()
-    avg_efficiency, std_efficiency = df_raw["nav_efficiency"].mean(), df_raw["nav_efficiency"].std()
+    avg_path_length, std_path_length = df_raw["path_length"].mean(), df_raw["path_length"].std()
 
     # 2. Prepare Status String
     if success_rate >= 98.0:
@@ -154,7 +154,7 @@ def print_nav_evaluation_report(df_raw, model_alias, verbose=True):
         
         ("Mean Steps", f"{avg_steps:.1f} ± {std_steps:.1f}"),
         ("Avg Energy", f"{avg_energy:.2f} ± {std_energy:.2f}"),
-        ("Efficiency", f"{avg_efficiency:.2f} ± {std_efficiency:.2f}"),
+        ("Path Lenght", f"{avg_path_length:.2f} ± {std_path_length:.2f}"),
     ]
 
     # 4. Format into Columns (3 Columns Wide)

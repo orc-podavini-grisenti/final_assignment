@@ -37,8 +37,38 @@ def save_to_csv(metrics, file_path):
 
 
 
+'''
+NB: We split the single evaluation intwo parts. this becouse the path effiency evaluation can be done
+    only with an empty enviroment. Since the Dubins Planner baseline implemented is a very simple
+    versio that don't consider obstacle avoidance
+'''
+def evaluate_single_nav_model(model_path, model_alias, num_episodes=50, seed=0, render=False, verbose=True):
+    """
+    Conducts a comprehensive 'Mission Reliability' evaluation for a trained RL navigation agent.
+    The evaluation focuses on four key pillars:
+    1. Reliability: Success vs. Collision rates.
+    2. Efficiency: Time (steps) and Energy consumption.
+    3. Safety: Minimum distance maintained from obstacles.
+    4. Path Quality: Total distance traveled.
 
-def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbose=True):
+    Args:
+        model_path (str): File system path to the trained '.pth' model weights.
+        model_alias (str): A unique string identifier (e.g., 'v1_baseline') used for 
+            logging results in CSV files and naming raw data exports.
+        num_episodes (int, optional): The number of simulation trials to run. 
+            Defaults to 50 (should be set to >0 for a valid evaluation).
+        seed (int, optional): The base random seed for reproducibility. Each episode 
+            'i' uses 'seed + i' to ensure varied but deterministic scenarios. Defaults to 0.
+        render (bool, optional): If True, opens a visualization window to display 
+            the robot's movement in real-time. Defaults to False.
+        verbose (True, optional): If True, prints a detailed summary report (Mean ± Std) 
+            to the console after completion. Defaults to True.
+
+    Returns:
+        dict: A dictionary containing the aggregated mean metrics (Success Rate, 
+            Collision Rate, Avg Energy, etc.) for the entire evaluation run.
+    """
+    
     """PART 1: MISSION RELIABILITY (Success, Collision, Safety, Energy)"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -46,9 +76,8 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
     env = UnicycleEnv()
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
-        env.reset(seed=seed)
-    else:
-        env.reset()
+
+    env.reset(seed=seed)
 
     # 2. Setup Agent and Normalizer
     n_rays = env.obs_cfg.get('n_rays', 20)
@@ -64,13 +93,14 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
     
     # Dictionary to store episode-by-episode data for stats
     raw_results = {"success": [], "collision": [], "steps": [], 
-                   "energy": [], "safety": [], "nav_efficiency": []}
+                   "energy": [], "safety": [], "path_length": []}
 
     print(f"Starting {num_episodes} episodes...")
 
     for i in range(num_episodes):
         env.reset(seed=seed + i)
-        sim_data = navigation_simulation(env, agent, normalizer, render=True)
+        
+        sim_data = navigation_simulation(env, agent, normalizer, render=render)
         
         if sim_data:
             raw_results["success"].append(int(sim_data["is_success"]))
@@ -78,7 +108,7 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
             raw_results["steps"].append(sim_data["steps"])
             raw_results["energy"].append(sim_data["energy_consumption"])
             raw_results["safety"].append(sim_data["safety_margin"])
-            raw_results["nav_efficiency"].append(sim_data["nav_efficiency"])
+            raw_results["path_length"].append(sim_data["path_length"])
         
         print(f"Progress: {i+1}/{num_episodes}", end="\r")
 
@@ -99,7 +129,7 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
         "Mean Steps": df_raw["steps"].mean(),
         "Avg Energy": df_raw["energy"].mean(),
         "Safety Margin": df_raw["safety"].mean(), 
-        "Nav Efficiency": df_raw["nav_efficiency"].mean()
+        "Path Lenght": df_raw["path_length"].mean()
     }
 
     save_to_csv(metrics, CSV_GENERAL)
@@ -108,12 +138,28 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
 
 
 
-''' 
-def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed, verbose=True):
+ 
+def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed=0, render = False, verbose=True):
     """PART 2: PATH EFFICIENCY (vs Dubins Planner)"""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 1. Setup Environment
     env = UnicycleEnv()
-    from utils.normalization import ObservationNormalizer
-    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.obs_cfg['lidar_range'])
+    if seed is not None:
+        print(f"🎲 Using Seed: {seed}")
+    
+    env.reset(seed=seed)
+
+    # 2. Setup Agent and Normalizer
+    n_rays = env.obs_cfg.get('n_rays', 20)
+    obs_dim = 3 + n_rays # [rho, alpha, d_theta] + lidar
+    action_dim = 2
+    
+    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
+    agent.load_state_dict(torch.load(model_path, map_location=device))
+    agent.eval() # Set to evaluation mode
+
+    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.rob_cfg['lidar_range'])
 
     raw_path_results = {"efficiency": [], "actual_len": [], "ideal_len": []}
 
@@ -121,35 +167,55 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed, 
         env.reset(seed=seed + i)
         
         # Calculate Ideal Reference (Dubins)
-        radius = np.clip(np.random.normal(1.65, 0.3), 0.8, 2.5)
-        planner = DubinsPlanner(curvature=1.0/radius, step_size=0.05)
+        radius = env.rob_cfg['v_max'] / env.rob_cfg['w_max']
+        planner = DubinsPlanner(curvature_max=1.0/radius, step_size=0.05)
         ideal_path = planner.get_path(env.state, env.goal)
         ideal_len = np.sum(np.linalg.norm(np.diff(ideal_path[:, :2], axis=0), axis=1))
 
-        sim_data = navigation_simulation(env, controller.model, normalizer, render=False)
+        sim_data = navigation_simulation(env, agent, normalizer, render=render, ideal_path=ideal_path)
         
         if sim_data and sim_data["is_success"]:
-            eff = ideal_len / sim_data["path_length"] if sim_data["path_length"] > 0 else 0
-            raw_path_results["efficiency"].append(np.clip(eff, 0, 1.0))
             raw_path_results["actual_len"].append(sim_data["path_length"])
             raw_path_results["ideal_len"].append(ideal_len)
+            eff = sim_data["path_length"] / ideal_len if sim_data["path_length"] > 0 else 0
+            raw_path_results["efficiency"].append(eff)
+        
+        print(f"Progress: {i+1}/{num_episodes}", end="\r")
+
+    print("\nEvaluation Complete.")
 
     # 1. Save Raw Data
     df_raw = pd.DataFrame(raw_path_results)
     raw_path = os.path.join(RAW_DATA_DIR, f"{model_alias}_path_raw.csv")
     df_raw.to_csv(raw_path, index=False)
 
+    mean_efficiency, std_efficiency = df_raw["efficiency"].mean(), df_raw["efficiency"].std()
+    mean_actual_path_lenght, std_actual_path_lenght = df_raw["actual_len"].mean(), df_raw["actual_len"].std()
+    mean_ideal_path_lenght, std_ideal_path_lenght = df_raw["ideal_len"].mean(), df_raw["ideal_len"].std()
+
+
     # 2. Calculate Aggregates
     metrics = {
         "Model Name": model_alias,
         "Date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-        "Nav Efficiency": df_raw["efficiency"].mean() if not df_raw.empty else 0,
-        "Avg Path Length": df_raw["actual_len"].mean() if not df_raw.empty else 0
+        "Nav Efficiency": mean_efficiency if not df_raw.empty else 0,
+        "Avg Actual Path Length": mean_actual_path_lenght if not df_raw.empty else 0,
+        "Avg Ideal Path Lenght": mean_ideal_path_lenght if not df_raw.empty else 0,
     }
 
     save_to_csv(metrics, CSV_PATH_QUAL)
+
+    report_title = "NAV PATH EFFICIENCY"
+    print(f"\n{'='*85}")
+    print(f"{report_title.center(85)}")
+    print(f"\t Avg Ideal Path Length:\t = \t {mean_ideal_path_lenght:.4f} ± {std_ideal_path_lenght:.4f}")
+    print(f"\t Avg Actual Path Length: = \t {mean_actual_path_lenght:.4f} ± {std_actual_path_lenght:.4f}")
+    print(f"\t Avg Efficiency:\t = \t {mean_efficiency:.4f} ± {std_efficiency:.4f}")
+    print("\n")
+    print(f"{'='*85}")
+
     return metrics
-'''
+
 
 
 

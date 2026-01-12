@@ -2,14 +2,14 @@ import numpy as np
 import torch
 import imageio
 
-def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, video_path=None):
+def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None, max_steps=1000, video_path=None):
     """
     Runs an autonomous navigation episode using a trained RL agent.
     
     Returns:
         dict: Metrics focused on success, safety, and efficiency.
     """
-    obs, _ = env.reset()
+    obs = env.get_obs()
     frames = []
     save_video = video_path is not None
 
@@ -65,6 +65,8 @@ def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, 
         # 5. Rendering
         if render:
             env.set_render_trajectory(metrics["positions"])
+            if ideal_path is not None: env.set_render_trajectory(ideal_path, second_path = True)
+            
             if save_video:
                 frame = env.render() 
                 if frame is not None:
