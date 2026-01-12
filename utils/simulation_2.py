@@ -9,9 +9,12 @@ def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, 
     Returns:
         dict: Metrics focused on success, safety, and efficiency.
     """
-    state, _ = env.reset()
+    obs, _ = env.reset()
     frames = []
     save_video = video_path is not None
+
+    if render:
+        env.render_mode = "human"
     
     metrics = {
         "rewards": [],
@@ -34,14 +37,14 @@ def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, 
         metrics["steps"] = t + 1
         
         # 1. Normalize the state (rho, alpha, d_theta + lidar rays)
-        normalized_state = normalizer.normalize(state)
+        normalized_obs = normalizer.normalize(obs)
         
         # 2. Get Deterministic Action for Evaluation
         with torch.no_grad():
-            action, _, _, _ = agent.get_action(normalized_state, deterministic=True)
+            action, _, _, _ = agent.get_action(normalized_obs, deterministic=True)
         
         # 3. Step Environment
-        next_state, reward, terminated, truncated, info = env.step(action)
+        next_obs, reward, terminated, truncated, info = env.step(action)
         
         # 4. Log Metrics
         metrics["rewards"].append(reward)
@@ -49,33 +52,42 @@ def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, 
         metrics["energy"] += (action[0]**2 + action[1]**2) * env.env_cfg["dt"]
         
         # Track safety using raw lidar data (usually from index 3 onwards)
-        lidar_data = state[3:] 
-        if lidar_data:
-            metrics["min_obstacle_dist"] = min(metrics["min_obstacle_dist"], np.min(lidar_data))
+        lidar_data = next_obs[3:] 
+        if lidar_data is not None and lidar_data.size > 0:
+            # Ensure the key exists in metrics before updating it
+            if "min_obstacle_dist" not in metrics:
+                metrics["min_obstacle_dist"] = np.min(lidar_data)
+            else:
+                metrics["min_obstacle_dist"] = min(metrics["min_obstacle_dist"], np.min(lidar_data))
         else:
             metrics["min_obstacle_dist"] = None
 
         # 5. Rendering
         if render:
+            env.set_render_trajectory(metrics["positions"])
             if save_video:
                 frame = env.render() 
                 if frame is not None:
+                    frame = frame[:, :, ::-1]
                     frames.append(frame)
             else:
                 env.render()
 
-        state = next_state
+        obs = next_obs
         if terminated or truncated:
             success = info.get('is_success', False)
             collision = info.get('collision', False)
             break
+
+        # if obs[0] <= 0.1:
+            # print('SIMULATION: position reached but with the wrong orientation, ', obs[2], 'rad')
 
     # --- FINAL CALCULATIONS ---
     total_dist_traveled = 0.0
     if len(metrics["positions"]) > 1:
         pts = np.array(metrics["positions"])
         total_dist_traveled = np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1))
-
+    
     if save_video and len(frames) > 0:
         fps = int(1 / env.env_cfg.get("dt", 0.05))
         imageio.mimsave(video_path, frames, fps=fps)
@@ -86,6 +98,11 @@ def navigation_simulation(env, agent, normalizer, render=False, max_steps=1000, 
         "steps": metrics["steps"],
         "total_reward": sum(metrics["rewards"]),
         "path_length": total_dist_traveled,
+
+        # Goal Errors 
+        "final_distance_to_goal": obs[0],
+        "final_angle_to_goal": obs[2],
+
         # Navigation Efficiency: Straight-line distance / Actual distance
         "nav_efficiency": initial_distance / total_dist_traveled if total_dist_traveled > 0 else 0,
         "safety_margin": metrics["min_obstacle_dist"],

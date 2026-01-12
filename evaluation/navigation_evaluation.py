@@ -1,17 +1,19 @@
 import os
 import numpy as np
 import pandas as pd
+import torch
 import matplotlib.pyplot as plt
 from tabulate import tabulate  
 
 # --- Import your modules ---
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
-from controllers.rl_controller import RLController
+from models.navigation_network import NavAgent
 from utils.simulation_2 import navigation_simulation  
+from utils.normalization import ObservationNormalizer
 
 # --- Import local utils ---
-from evaluation.utils import generate_comparison_boxplots
+from evaluation.utils import generate_comparison_boxplots, print_nav_evaluation_report
 from evaluation.statistics import paired_stat_test
 
 
@@ -38,17 +40,37 @@ def save_to_csv(metrics, file_path):
 
 def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbose=True):
     """PART 1: MISSION RELIABILITY (Success, Collision, Safety, Energy)"""
-    controller = RLController(model_path=model_path)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 1. Setup Environment
     env = UnicycleEnv()
-    from utils.normalization import ObservationNormalizer
-    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.obs_cfg['lidar_range'])
+    if seed is not None:
+        print(f"🎲 Using Seed: {seed}")
+        env.reset(seed=seed)
+    else:
+        env.reset()
 
+    # 2. Setup Agent and Normalizer
+    n_rays = env.obs_cfg.get('n_rays', 20)
+    obs_dim = 3 + n_rays # [rho, alpha, d_theta] + lidar
+    action_dim = 2
+    
+    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
+    agent.load_state_dict(torch.load(model_path, map_location=device))
+    agent.eval() # Set to evaluation mode
+
+    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.rob_cfg['lidar_range'])
+
+    
     # Dictionary to store episode-by-episode data for stats
-    raw_results = {"success": [], "collision": [], "steps": [], "energy": [], "safety": []}
+    raw_results = {"success": [], "collision": [], "steps": [], 
+                   "energy": [], "safety": [], "nav_efficiency": []}
+
+    print(f"Starting {num_episodes} episodes...")
 
     for i in range(num_episodes):
         env.reset(seed=seed + i)
-        sim_data = navigation_simulation(env, controller.model, normalizer, render=False)
+        sim_data = navigation_simulation(env, agent, normalizer, render=True)
         
         if sim_data:
             raw_results["success"].append(int(sim_data["is_success"]))
@@ -56,6 +78,11 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
             raw_results["steps"].append(sim_data["steps"])
             raw_results["energy"].append(sim_data["energy_consumption"])
             raw_results["safety"].append(sim_data["safety_margin"])
+            raw_results["nav_efficiency"].append(sim_data["nav_efficiency"])
+        
+        print(f"Progress: {i+1}/{num_episodes}", end="\r")
+
+    print("\nEvaluation Complete.")
 
     # 1. Save Raw Data for Stats/Plotting
     df_raw = pd.DataFrame(raw_results)
@@ -71,18 +98,19 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes, seed, verbo
         "Collision Rate (%)": df_raw["collision"].mean() * 100,
         "Mean Steps": df_raw["steps"].mean(),
         "Avg Energy": df_raw["energy"].mean(),
-        "Safety Margin": df_raw["safety"].mean()
+        "Safety Margin": df_raw["safety"].mean(), 
+        "Nav Efficiency": df_raw["nav_efficiency"].mean()
     }
 
     save_to_csv(metrics, CSV_GENERAL)
+    print_nav_evaluation_report(df_raw, model_alias, verbose=verbose)
     return metrics
 
 
 
-
+''' 
 def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed, verbose=True):
     """PART 2: PATH EFFICIENCY (vs Dubins Planner)"""
-    controller = RLController(model_path=model_path)
     env = UnicycleEnv()
     from utils.normalization import ObservationNormalizer
     normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.obs_cfg['lidar_range'])
@@ -121,7 +149,7 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed, 
 
     save_to_csv(metrics, CSV_PATH_QUAL)
     return metrics
-
+'''
 
 
 

@@ -31,13 +31,13 @@ It is particularly useful for:
 HOW TO RUN THIS SCRIPT:
 -----------------------
 1. Run with a specific trained model: 
-   $ python ./scripts/run_navigation.py --model nav_v1_lidar --seed 42
+   $ python ./scripts/run_navigation.py --model nav_1 --seed 42
 
 2. Run and save a video of the navigation performance: 
-   $ python ./scripts/run_navigation.py --model nav_v1_lidar --save_video
+   $ python ./scripts/run_navigation.py --model nav_1 --save_video
 
 3. Test without a fixed seed (random scenario):
-   $ python ./scripts/run_navigation.py --model nav_v1_lidar
+   $ python ./scripts/run_navigation.py --model nav_1
 
 NB: The "Navigation Efficiency" metric compares the agent's path length 
     against the shortest possible Dubins Path for that specific start/goal.
@@ -56,7 +56,7 @@ def get_navigation_agent(model_name, obs_dim, action_dim, device):
 
     print(f"🔵 Loading Navigation Agent from: {model_path}")
     
-    agent = NavAgent(obs_dim, action_dim, hidden_dim=256, device=device)
+    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval() # Set to evaluation mode
     return agent
@@ -79,7 +79,7 @@ def run_nav_episode(model_name, seed=None, save_video=False):
     action_dim = 2
     
     agent = get_navigation_agent(model_name, obs_dim, action_dim, device)
-    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.obs_cfg['lidar_range'])
+    normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.rob_cfg['lidar_range'])
 
     # 3. Prepare Video Path
     video_path = None
@@ -114,7 +114,8 @@ def run_nav_episode(model_name, seed=None, save_video=False):
             ("Nav Efficiency", f"{result['nav_efficiency']:.3f}"),
             # ("Safety Margin", f"{result['safety_margin']:.3f} m"),
             ("Energy", f"{result['energy_consumption']:.2f}"),
-            ("Final Distance", f"{result['final_distance_to_goal']:.4f} m")
+            ("Final Distance", f"{result['final_distance_to_goal']:.4f} m"),
+            ("Final Angle Error", f"{result['final_angle_to_goal']:.4f} rad")
         ]
 
         # Formatting table (borrowed from your reference script)

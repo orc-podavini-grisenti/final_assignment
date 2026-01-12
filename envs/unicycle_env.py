@@ -322,7 +322,7 @@ class UnicycleEnv(gym.Env):
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(canvas, [pts], isClosed=False, color=(255, 255, 0), thickness=2)
 
-        # 5. Display (Optional: Only works if you have a GUI/X11)
+        # 6. Display (Optional: Only works if you have a GUI/X11)
         # If running in headless Docker, you might want to return the array instead.
         if self.render_mode == "human":
             cv2.imshow("Unicycle Nav", canvas)
