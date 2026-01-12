@@ -209,7 +209,10 @@ class UnicycleEnv(gym.Env):
         truncated = self.current_step >= self.env_cfg['max_steps']
         
         # Small time penalty to encourage efficiency
-        reward -= 0.1 
+        reward -= 1 
+
+        if reached_goal:
+            reward += 1000
 
         info = {
             "is_success": reached_goal,

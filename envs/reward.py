@@ -69,31 +69,34 @@ class NavigationReward:
         
     def compute_reward(self, obs, action, collision, reached_goal):
         rho, alpha, d_theta = obs[0:3]
-        lidar_scan = obs[3:]
         v, omega = action
 
         reward = 0.0
 
-        # 1. OBSTACLE AVOIDANCE (The Negative Lower Bound)
-        min_lidar = np.min(lidar_scan)
-        if min_lidar < self.min_safe_dist:
-            # Strong exponential penalty to ensure the agent values safety over all else
-            reward -= self.w_obstacle * np.exp(1.0 - min_lidar / self.min_safe_dist)
+        # 1. ENCOURAGE SLOWING DOWN NEAR GOAL
+        # If the robot is very close (rho < threshold), we penalize high velocity
+        # This forces the robot to 'stabilize' rather than 'shoot through'
+        if rho < 0.5:
+            reward -= 0.5 * v  # Penalty for moving too fast when close
 
-        # 2. PROGRESS-GATED ALIGNMENT (Prevents Spinning)
-        # We only reward facing the goal if the robot is actually moving forward (v > 0)
-        if v > 0.1:
-            reward += self.w_alignment * np.cos(alpha) * v
-        else:
-            # Penalize sitting still or moving backward while facing away
-            reward -= 0.1
+        # 2. ALIGNMENT REWARD (Dynamic)
+        # Instead of just cos(alpha), reward matching the FINAL d_theta
+        # This gives a signal even if the robot is sitting on the goal
+        reward += self.w_alignment * np.cos(d_theta)
 
-        # 3. SMOOTHNESS 
-        # Encourages stable first-order optimization by penalizing jerky rotations
-        reward -= self.w_smoothness * np.abs(omega)
+        # 3. THE "GOLDEN" SUCCESS BONUS
+        # The paper uses high rewards for success in benchmarks[cite: 161, 162].
+        # Reaching the goal with the correct orientation should be 
+        # the single largest reward the robot can ever receive.
+        if reached_goal:
+            reward += 1000.0  # Massive bonus for satisfying both constraints
+        elif rho < 0.3:
+            # "Participation trophy" for getting the position right, 
+            # but much smaller than the full success.
+            reward += 10.0 
 
-        # 4. STEP PENALTY
-        # Similar to Atari benchmarks that favor fast learning [cite: 275]
-        reward -= 0.05 
+        # 4. STEP PENALTY (Efficiency)
+        # This prevents the robot from 'dancing' around the goal to farm alignment points.
+        reward -= 0.1 
 
         return reward
