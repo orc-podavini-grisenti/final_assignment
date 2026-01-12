@@ -111,8 +111,8 @@ def run_nav_episode(model_name, seed=None, save_video=False):
             ("Steps to Goal", f"{result['steps']}"),
             ("Total Reward", f"{result['total_reward']:.2f}"),
             ("Path Length", f"{result['path_length']:.2f} m"),
-            ("Nav Efficiency", f"{result['nav_efficiency']:.3f}"),
-            # ("Safety Margin", f"{result['safety_margin']:.3f} m"),
+    
+            ("Safety Margin", f"{result['safety_margin']:.3f} m"),
             ("Energy", f"{result['energy_consumption']:.2f}"),
             ("Final Distance", f"{result['final_distance_to_goal']:.4f} m"),
             ("Final Angle Error", f"{result['final_angle_to_goal']:.4f} rad")

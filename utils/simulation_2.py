@@ -42,6 +42,8 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         # 2. Get Deterministic Action for Evaluation
         with torch.no_grad():
             action, _, _, _ = agent.get_action(normalized_obs, deterministic=True)
+            if action[0] > env.rob_cfg["v_max"]: print("⚠️ Action Linear Velocity ", action[0], " over robot limits: ", env.rob_cfg["v_max"])
+            if action[1] > env.rob_cfg["w_max"]: print("⚠️ Action Angular Velocity ", action[1], " over robot limits: ", env.rob_cfg["w_max"])
         
         # 3. Step Environment
         next_obs, reward, terminated, truncated, info = env.step(action)
@@ -105,8 +107,7 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         "final_distance_to_goal": obs[0],
         "final_angle_to_goal": obs[2],
 
-        # Navigation Efficiency: Straight-line distance / Actual distance
-        "nav_efficiency": initial_distance / total_dist_traveled if total_dist_traveled > 0 else 0,
+
         "safety_margin": metrics["min_obstacle_dist"],
         "energy_consumption": metrics["energy"]
     }
