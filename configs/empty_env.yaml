@@ -8,8 +8,8 @@ environment:
   
   # Boundaries of the square world (meters)
   world_bounds:
-    x_min: -2.0
-    x_max: 2.0
+    x_min: -3.5
+    x_max: 3.5
     y_min: -2.0
     y_max: 2.0
 
@@ -36,9 +36,9 @@ obstacles:
   # If 'fixed': Obstacles are spawned at the coordinates listed below
   # spawn_mode: "fixed" 
   
-  n_obstacles: 4        # Number of obstacles to spawn (ignored if fixed)
-  
-  min_clearance: 1.5    # Min distance between obstacles and robot/goal at spawn
+  n_obstacles: 0        # Number of obstacles to spawn (ignored if fixed)
+  lidar_range: 3.0      # Max detection range for the robot's sensors
+  min_clearance: 0.5    # Min distance between obstacles and robot/goal at spawn
   
   # Define fixed obstacle.
   # Format: [type, center_x, center_y, parameters]

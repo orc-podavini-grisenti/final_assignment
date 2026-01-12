@@ -144,7 +144,8 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed=0
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. Setup Environment
-    env = UnicycleEnv()
+    empty_env_path = "configs/empty_env.yaml"
+    env = UnicycleEnv(empty_env_path)
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
     
