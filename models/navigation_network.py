@@ -5,7 +5,7 @@ from torch.distributions import Normal
 import numpy as np
 
 class NavActor(nn.Module):
-    def __init__(self, obs_dim, action_dim, hidden_dim=255): # Reduced to 64 per paper 
+    def __init__(self, obs_dim, action_dim, hidden_dim=256): # Reduced to 64 per paper 
         super(NavActor, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
@@ -34,7 +34,7 @@ class NavActor(nn.Module):
 
 
 class NavCritic(nn.Module):
-    def __init__(self, obs_dim, hidden_dim=64): # Matched to 64 per paper
+    def __init__(self, obs_dim, hidden_dim=256): # Matched to 64 per paper
         super(NavCritic, self).__init__()
         
         self.net = nn.Sequential(

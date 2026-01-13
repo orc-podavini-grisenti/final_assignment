@@ -10,14 +10,14 @@ class NavigationReward:
 
         # Parameters for the Active Obstacle Zone
         self.min_safe_dist = 0.2    # Deep danger threshold
-        self.warning_dist = 0.4     # Border where penalty/reward begins
+        self.warning_dist = 0.5     # Border where penalty/reward begins
         self.prev_min_dist = None
         
         # Transition treshold between zone 1 and zone 2
-        self.distance_transition = 1    
+        self.distance_transition = 1.5    
 
         # Dense Reward Weights
-        self.w_allignement = 1.0 
+        self.w_allignement = 2.0
         self.w_closer =  1.0 
         self.w_pointing = 1.0
         self.w_obstacle = 1.0
@@ -132,12 +132,12 @@ class NavigationReward:
         # In Zone 1 (Far): Focus su avvicinamento (closer) e puntamento (pointing)
         # In Zone 2 (Near): Focus su allineamento finale (alignment)
         nav_component = (pointing_reward + closer_reward) * nav_weight
-        dock_component = alignment_reward * docking_weight
+        dock_component = (alignment_reward * closer_reward) * docking_weight
 
         # Sommiamo i componenti principali
         # Nota: obstacle_reward rimane fuori dai pesi di zona perché la sicurezza 
         # è prioritaria sia lontano che vicino al goal.
-        dense_reward = nav_component + dock_component + obstacle_reward
+        dense_reward = nav_component + dock_component + obstacle_reward - 0.2
 
        
         # --- TERMINAL EVENTS ---

@@ -101,8 +101,7 @@ class ObstacleManager:
         
         for _ in range(num_obstacles):
             # Try to place obstacle with clearance
-            max_attempts = 50
-            for _ in range(max_attempts):
+            while True:
                 # Random center position
                 center_x = np_random.uniform(bounds['x_min'], bounds['x_max'])
                 center_y = np_random.uniform(bounds['y_min'], bounds['y_max'])

@@ -125,7 +125,7 @@ class UnicycleEnv(gym.Env):
                 bounds=self.env_cfg['world_bounds'],
                 robot_pos=self.state,
                 goal_pos=self.goal,
-                min_clearance=0.5,
+                min_clearance=self.obs_cfg['min_clearance'],
                 np_random=self.np_random
             )
             # NB: We don't need to check that the goal collide with obstacle; becouse generate_random_obstacles
