@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import imageio
+from utils.reward_2 import NavigationReward
 
 def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None, max_steps=1000, video_path=None):
     """
@@ -12,6 +13,9 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
     obs = env.get_obs()
     frames = []
     save_video = video_path is not None
+
+    reward_calculator = NavigationReward(env.rob_cfg['v_max'], env.env_cfg['dt'])
+
 
     if render:
         env.render_mode = "human"
@@ -46,7 +50,10 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
             if action[1] > env.rob_cfg["w_max"]: print("⚠️ Action Angular Velocity ", action[1], " over robot limits: ", env.rob_cfg["w_max"])
         
         # 3. Step Environment
-        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_obs, terminated, truncated, info = env.step(action)
+        
+        reward = reward_calculator.compute_reward(obs, action, info, truncated)
+
         
         # 4. Log Metrics
         metrics["rewards"].append(reward)

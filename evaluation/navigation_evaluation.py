@@ -139,7 +139,7 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes=50, seed=0, 
 
 
  
-def evaluate_single_nav_model_path(model_path, model_alias, num_episodes, seed=0, render = False, verbose=True):
+def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, seed=0, render = False, verbose=True):
     """PART 2: PATH EFFICIENCY (vs Dubins Planner)"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
