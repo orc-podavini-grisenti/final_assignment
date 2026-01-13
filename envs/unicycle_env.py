@@ -2,6 +2,7 @@ import os
 import cv2
 import math
 import yaml
+import random
 
 import numpy as np
 
@@ -9,8 +10,6 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from envs.obstacle import ObstacleManager
-from envs.reward import NavigationReward
-
 
 
 class UnicycleEnv(gym.Env):
@@ -71,7 +70,6 @@ class UnicycleEnv(gym.Env):
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])
-        self.reward_manager = NavigationReward(weights=reward_weights)
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
@@ -85,15 +83,19 @@ class UnicycleEnv(gym.Env):
 
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        
-        self.reward_manager.reset_history()
+        if seed is None:
+            seed = random.randint(0, 10000)
 
+        super().reset(seed=seed)
+
+        self.current_seed = seed    # store the seed 
+        # print("DEBUG seed:", seed, "env current_seed", self.current_seed)
+        
         # 1. Initialize Robot State (x, y, theta)
         self.state = np.array([0.0, 0.0, 0.0])
         
         # 2. Random Goal Generation (e.g., within a 5x5 box)
-        self._spaw_goal()
+        self._spawn_goal()
         
         # 3. Initialize Obstacles
         spawn_mode = self.obs_cfg['spawn_mode']
@@ -123,7 +125,7 @@ class UnicycleEnv(gym.Env):
                 bounds=self.env_cfg['world_bounds'],
                 robot_pos=self.state,
                 goal_pos=self.goal,
-                min_clearance=1,
+                min_clearance=0.5,
                 np_random=self.np_random
             )
             # NB: We don't need to check that the goal collide with obstacle; becouse generate_random_obstacles
@@ -131,21 +133,50 @@ class UnicycleEnv(gym.Env):
             
         self.current_step = 0
         
-        self.progress_balance = 0
-        self.reward_balance = 0
-        
-        self.was_near = False
+        return self.get_obs(), {}
 
+    def reset_robot(self):
+        """
+        Resets the robot to the starting state and resets the timer,
+        BUT keeps the current obstacles and goal configurations.
+        """
+        # 1. Reset Robot State (Matches the logic in your main reset)
+        self.state = np.array([0.0, 0.0, 0.0])
+        
+        # 2. Reset Simulation Timer/Counters
+        self.current_step = 0
+        
+        # 3. Return observation (standard Gym API)
         return self.get_obs(), {}
 
 
 
     def step(self, action):
-        # Kinematics
+        """
+        Updates the robot state based on the provided action.
+
+        Args:
+            action (np.ndarray): A 1D array of shape (2,) containing 
+                [v_raw, w_raw] in the range [-1, 1].
+
+        Returns:
+            tuple: A tuple containing:
+                - observation (np.ndarray): The new state representation.
+                - terminated (bool): Whether the episode has ended (goal or collision).
+                - truncated (bool): Whether the episode ended due to time limits.
+                - info (dict): Diagnostic information (success, collision flags).
+        """
+        # --- 1. Unpack and Scale Actions ---
+        # Map [-1, 1] to physical limits
         v_raw, w_raw = action
         v = np.interp(v_raw, [-1, 1], [ self.rob_cfg['v_min'], self.rob_cfg['v_max'] ])
         w = np.interp(w_raw, [-1, 1], [ self.rob_cfg['w_min'], self.rob_cfg['w_max'] ])
+        
 
+        # --- 2. Apply Kinematics (Unicycle Model) ---
+        # x_dot = v * cos(theta)
+        # y_dot = v * sin(theta)
+        # theta_dot = w
         x, y, theta = self.state
         dt = self.env_cfg['dt']
 
@@ -156,36 +187,55 @@ class UnicycleEnv(gym.Env):
         # Normalize theta to [-pi, pi]
         theta_new = (theta_new + np.pi) % (2 * np.pi) - np.pi
         
-        # 1. Update state and get new observation
+        # Update the state to the new one
         self.state = np.array([x_new, y_new, theta_new])
         self.current_step += 1
+
+        # Define the new observable
         obs = self.get_obs()
-        curr_dist = np.linalg.norm(self.state[:2] - self.goal[:2])
         
-        # Terminals [cite: 139, 189]
-        d_theta = (self.goal[2] - self.state[2] + np.pi) % (2 * np.pi) - np.pi
-        reached_goal = (curr_dist < self.goal_cfg['threshold']) and (abs(d_theta) < self.goal_cfg['heading_threshold'])
+
+        # --- 3. Make the Checks ---
+              
+        # 1) Check Collision
         collision = self.obstacle_manager.check_collision(self.state, self.rob_cfg['radius'])
-
-        too_far = False
-        is_near = curr_dist < self.reward_manager.d_transition
-        if self.was_near and not is_near and not reached_goal:
-            too_far = True
-        self.was_near = is_near
-
-        # Centralized Reward Calculation
-        prev_dist = np.linalg.norm([x - self.goal[0], y - self.goal[1]])
-        reward = self.reward_manager.compute_reward(obs, action, collision, reached_goal, too_far, prev_dist, curr_dist)
         
-        terminated = collision or reached_goal or too_far
+        # 2) Check Goal Reached
+        # The goal is reached when: 
+        #       -> the distance robot-goal is under the config dist_treshold
+        #       -> the angle robot-goal is under the config angle_treshold
+        
+        # A. Distance to goal check
+        dist_to_final = np.linalg.norm(self.state[:2] - self.goal[:2])
+        
+        # B. Heading alignment check (NEW)
+        current_theta = self.state[2]
+        goal_theta = self.goal[2]
+        heading_error = np.arctan2(np.sin(current_theta - goal_theta), np.cos(current_theta - goal_theta))
+
+        # C. Success Condition
+        is_success = (dist_to_final < self.goal_cfg['dist_threshold']) and \
+                     (np.abs(heading_error) < self.goal_cfg['angle_threshold']) 
+
+        
+        # --- 4. Prepare the output ---
+        if collision:
+            terminated = True
+        elif is_success:
+            # print("ENV: Goal Reached!  Distannce to Goal: ", dist_to_final , "  Heading Error: ", heading_error)
+            terminated = True
+        else:
+            terminated = False
+            
+        # Truncation (Time limit)
         truncated = self.current_step >= self.env_cfg['max_steps']
+        
         info = {
-            "is_success": reached_goal,
-            "collision": collision
+            "is_success": is_success,
+            "collision": collision,
         }
-
-        return obs, reward, terminated, truncated, info
-
+        
+        return obs, terminated, truncated, info
 
     ''' Constructs the observation vector. '''
     def get_obs(self):
@@ -239,7 +289,7 @@ class UnicycleEnv(gym.Env):
 
 
     ''' Private Function that menage the spawn of a random goal.'''
-    def _spaw_goal(self):
+    def _spawn_goal(self):
         # Get World Bounds and Margin
         wb = self.env_cfg['world_bounds']
         margin = self.goal_cfg['spawn_margin']

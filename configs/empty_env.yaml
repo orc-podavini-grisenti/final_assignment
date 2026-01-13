@@ -18,7 +18,7 @@ environment:
 # --- Robot Physical Limits ---
 robot:
   radius: 0.3       # Radius of the robot (meters) for collision checking
-  v_min: -0.2        # Minimum linear velocity (m/s) - small negative velocity for exiting blind spots
+  v_min: 0.0        # Minimum linear velocity (m/s) - small negative velocity for exiting blind spots
   v_max: 1.0        # Maximum linear velocity (m/s)
   w_min: -1.5       # Minimum angular velocity (rad/s)
   w_max: 1.5        # Maximum angular velocity (rad/s)
@@ -66,8 +66,9 @@ goal:
   # If 'fixed': Obstacles are spawned at the coordinates listed below
   # spawn_mode: "fixed"
 
-  heading_threshold: 0.1
-  threshold: 0.1    # Distance to target to consider "reached" (meters)
+  dist_threshold: 0.1    # meters (e.g., 10cm)
+  angle_threshold: 0.2   # radians (approx 11 degrees)
+
   spawn_margin: 0.5 # Margin from the world bounds in which the goal can spawn
 
   # Define fixed goal.
