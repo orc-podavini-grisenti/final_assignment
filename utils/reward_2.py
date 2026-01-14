@@ -23,9 +23,9 @@ class NavigationReward:
         self.w_obstacle = 1.0
 
         # Terminal Reward Weights
-        self.w_success = 200
-        self.w_collision = -200
-        self.w_truncated = -100
+        self.w_success = 50
+        self.w_collision = -50
+        self.w_truncated = -20
         
         # Storage for debugging/plotting components
         self.history = {
@@ -153,9 +153,9 @@ class NavigationReward:
         if info['is_success']:
             terminal_reward = self.w_success 
         elif info['collision']:
-            terminal_reward = -200.0
+            terminal_reward = self.w_collision
         elif truncated:
-            terminal_reward = -100.0
+            terminal_reward = self.w_truncated
         
         # Constant step penalty to encourage speed
         reward = dense_reward + terminal_reward
