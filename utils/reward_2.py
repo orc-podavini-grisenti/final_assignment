@@ -17,7 +17,7 @@ class NavigationReward:
         self.distance_transition = 1.5    
 
         # Dense Reward Weights
-        self.w_allignement = 2.0
+        self.w_allignement = 1.0
         self.w_closer =  1.0 
         self.w_pointing = 1.0
         self.w_obstacle = 1.0
@@ -34,8 +34,8 @@ class NavigationReward:
           'closer_reward': [],
           'pointing_reward': [],
           'obstacle_reward': [],
-          'nav_component': [],
-          'dock_component': [],
+          'nav_weight': [],
+          'dock_weight': [],
         }
         
 
@@ -113,10 +113,18 @@ class NavigationReward:
         obstacle_reward = 0.0
         curr_min_dist = np.min(lidar_scan)
 
+        # A. Dynamic: Reward/Penalty for movement relative to obstacles
         if curr_min_dist < self.warning_dist and self.prev_min_dist is not None:
             dist_from_obs_change = curr_min_dist - self.prev_min_dist  
-            obstacle_reward = np.clip(dist_from_obs_change / self.max_step_dist, -1, 1)
+            obstacle_reward += np.clip(dist_from_obs_change / self.max_step_dist, -1, 1)
         
+        # B. Static: Continuous pressure to leave the zone (CRITICAL)
+        # Without this, the robot might just stop 1cm from the wall to avoid the "movement penalty".
+        if curr_min_dist < self.warning_dist:
+            static_penalty = (self.warning_dist - curr_min_dist) / self.warning_dist
+            obstacle_reward -= static_penalty # Linearly scales up as we get closer
+        
+        obstacle_reward = np.clip(obstacle_reward, -1.0, 1.0)
         self.prev_min_dist = curr_min_dist
 
 
@@ -159,8 +167,8 @@ class NavigationReward:
         self.history['closer_reward'].append(closer_reward)
         self.history['pointing_reward'].append(pointing_reward)
         self.history['obstacle_reward'].append(obstacle_reward)
-        self.history['nav_component'].append(nav_component)
-        self.history['dock_component'].append(dock_component)
+        self.history['nav_weight'].append(nav_weight)
+        self.history['dock_weight'].append(docking_weight)
         
 
         return reward
