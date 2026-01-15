@@ -60,7 +60,7 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         action_clipped = np.clip(action_np, -1.0, 1.0)
         
         # 3. Step Environment
-        new_obs, terminated, truncated, info = env.step(np.abs(action_clipped))
+        new_obs, terminated, truncated, info = env.step(action_clipped)
         reward = reward_calculator.compute_reward(new_obs, action_clipped, info, truncated)
 
         

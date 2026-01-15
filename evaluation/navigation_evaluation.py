@@ -73,7 +73,8 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes=50, seed=0, 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. Setup Environment
-    env = UnicycleEnv()
+    env_nav_ev_path = "configs/env_nav_ev.yaml"
+    env = UnicycleEnv(env_nav_ev_path)
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
 
@@ -156,7 +157,7 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, see
     obs_dim = 3 + n_rays # [rho, alpha, d_theta] + lidar
     action_dim = 2
     
-    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
+    agent = NavActor(obs_dim, action_dim, hidden_dim=512).to(device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval() # Set to evaluation mode
 
