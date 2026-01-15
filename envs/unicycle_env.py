@@ -24,19 +24,29 @@ class UnicycleEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, config_path=None, reward_weights=None):
+    def __init__(self, config_name=None):
         super(UnicycleEnv, self).__init__()
 
-        # --- 1. Load Configuration ---
-        if config_path is None:
-            # Default to config/env.yaml relative to this file
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(current_dir) 
-            config_path = os.path.join(project_root, 'configs', 'env.yaml')
+        # --- 1. Load Configuration ---        
+        current_dir = os.path.dirname(os.path.abspath(__file__))    # Get the directory where THIS file (unicycle_env.py) is located: .../project/envs
+        project_root = os.path.dirname(current_dir)     # Go up one level to find the Project Root: .../project
+        config_dir = os.path.join(project_root, 'configs')  # Define the directory where configs are stored
+        # Handle the case where config_name might be None (fallback to default)
+        if config_name is None:
+            config_name = "env"
+        config_name = config_name + ".yaml"
+        # Build the full absolute path
+        config_path = os.path.join(config_dir, config_name)
+        # Debug print (Optional: helps verify it's looking in the right place)
+        print(f"📍 Loading config from: {config_path}")
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"❌ Config file not found: {config_path}")
 
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
+    
         # --- 2. Apply Config Parameters ---
         self.env_cfg = config['environment']    # Enviroment Configuration
         self.rob_cfg = config['robot']          # Robot Configuration

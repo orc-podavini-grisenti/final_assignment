@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
-from tabulate import tabulate  
+from tabulate import tabulate    
 
 # --- Import your modules ---
 from envs.unicycle_env import UnicycleEnv
@@ -13,14 +13,14 @@ from utils.simulation_2 import navigation_simulation
 from utils.normalization import ObservationNormalizer
 
 # --- Import local utils ---
-from evaluation.utils import generate_comparison_boxplots, print_nav_evaluation_report
-from evaluation.statistics import paired_stat_test
+from evaluation.utils import print_nav_evaluation_report
 
 
 # --- CONSTANTS ---
 CSV_GENERAL = "evaluation/output/NAV_performance.csv"
 CSV_PATH_QUAL = "evaluation/output/NAV_path_quality.csv"
 RAW_DATA_DIR = "evaluation/output/raw_nav_data"
+
 
 
 # --- UTILS ---
@@ -73,8 +73,7 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes=50, seed=0, 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. Setup Environment
-    env_nav_ev_path = "configs/env_nav_ev.yaml"
-    env = UnicycleEnv(env_nav_ev_path)
+    env = UnicycleEnv("env_nav_ev")
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
 
@@ -145,8 +144,7 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, see
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. Setup Environment
-    empty_env_path = "configs/empty_env.yaml"
-    env = UnicycleEnv(empty_env_path)
+    env = UnicycleEnv("empty_env")
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
     
@@ -217,53 +215,3 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, see
     print(f"{'='*85}")
 
     return metrics
-
-
-
-
-def navigation_comparison_analysis(mode="general"):
-    """
-    Leaderboard + Statistical Significance + Boxplots.
-    mode: 'general' or 'path'
-    """
-    file_path = CSV_GENERAL if mode == "general" else CSV_PATH_QUAL
-    suffix = "general_raw" if mode == "general" else "path_raw"
-    
-    # Define which columns to run stats on based on the mode
-    if mode == "general":
-        nav_metrics = ["success", "collision", "steps", "energy", "safety"]
-    else:
-        nav_metrics = ["efficiency", "actual_len"]
-
-    if not os.path.exists(file_path):
-        return
-
-    df = pd.read_csv(file_path)
-    df_latest = df.sort_values('Date').groupby('Model Name').tail(1)
-    models = df_latest["Model Name"].unique()
-
-    # --- 1. PRINT LEADERBOARD ---
-    print(f"\n🏆 NAVIGATION LEADERBOARD ({mode.upper()})")
-    print(tabulate(df_latest, headers='keys', tablefmt='fancy_grid', showindex=False))
-
-    # --- 2. STATISTICAL ANALYSIS (Wilcoxon/T-Test) ---
-    if len(models) >= 2:
-        print(f"\n⚖️  STATISTICAL SIGNIFICANCE (Reference: {models[0]})")
-        for i in range(1, len(models)):
-            path_a = os.path.join(RAW_DATA_DIR, f"{models[0]}_{suffix}.csv")
-            path_b = os.path.join(RAW_DATA_DIR, f"{models[i]}_{suffix}.csv")
-            
-            if os.path.exists(path_a) and os.path.exists(path_b):
-                df_a, df_b = pd.read_csv(path_a), pd.read_csv(path_b)
-                # Reusing your utility function
-                paired_stat_test(df_a, df_b, nav_metrics, models[0], models[i])
-
-        # --- 3. PLOTTING ---
-        print(f"\n📊 Generating {mode} comparative boxplots...")
-        generate_comparison_boxplots(
-            models=models, 
-            raw_data_dir=RAW_DATA_DIR, 
-            plots_dir=f"evaluation/output/plots_{mode}",
-            # Important: Ensure your generate_comparison_boxplots uses these suffixes
-            file_suffix=f"_{suffix}.csv" 
-        )
