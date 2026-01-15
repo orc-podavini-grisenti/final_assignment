@@ -11,7 +11,7 @@ from tabulate import tabulate
 from envs.unicycle_env import UnicycleEnv
 from utils.simulation_2 import navigation_simulation
 from utils.normalization import ObservationNormalizer
-from models.navigation_network import NavAgent
+from models.navigation_network import NavActor
 
 """
 WHAT THE SCRIPT DOES:
@@ -46,17 +46,15 @@ NB: The "Navigation Efficiency" metric compares the agent's path length
 def get_navigation_agent(model_name, obs_dim, action_dim, device):
     """Loads the trained NavAgent and its weights."""
     # Construct model path
-    model_path = os.path.join("training", model_name, "nav_agent_final.pth")
+    model_path = os.path.join("training", model_name, "nav_actor_final.pth")
     
     if not os.path.exists(model_path):
         # Fallback to direct model path if the full experiment path isn't used
-        model_path = os.path.join("drive/MyDrive/final_assignment/models_saved", model_name)
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Could not find model at {model_path}")
+        raise FileNotFoundError(f"Could not find model at {model_path}")
 
     print(f"🔵 Loading Navigation Agent from: {model_path}")
     
-    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
+    agent = NavActor(obs_dim, action_dim, hidden_dim=512).to(device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval() # Set to evaluation mode
     return agent

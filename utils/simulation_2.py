@@ -42,26 +42,35 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         
         # 1. Normalize the state (rho, alpha, d_theta + lidar rays)
         normalized_obs = normalizer.normalize(obs)
+        device = next(agent.parameters()).device
+        normalized_obs = torch.from_numpy(normalized_obs).float().to(device)
+        if normalized_obs.dim() == 1:
+            normalized_obs = normalized_obs.unsqueeze(0) # (Dim,) -> (1, Dim)
+        # print('N OBS:', normalized_obs)
         
         # 2. Get Deterministic Action for Evaluation
         with torch.no_grad():
-            action, _, _, _ = agent.get_action(normalized_obs, deterministic=True)
+            action = agent.get_action(normalized_obs, deterministic=True)[0]
+            # print('ACTION: ', action)
             if action[0] > env.rob_cfg["v_max"]: print("⚠️ Action Linear Velocity ", action[0], " over robot limits: ", env.rob_cfg["v_max"])
             if action[1] > env.rob_cfg["w_max"]: print("⚠️ Action Angular Velocity ", action[1], " over robot limits: ", env.rob_cfg["w_max"])
         
-        # 3. Step Environment
-        next_obs, terminated, truncated, info = env.step(action)
+        # Clip action for environment (physical limits)
+        action_np = action.cpu().numpy()
+        action_clipped = np.clip(action_np, -1.0, 1.0)
         
-        reward = reward_calculator.compute_reward(obs, action, info, truncated)
+        # 3. Step Environment
+        new_obs, terminated, truncated, info = env.step(np.abs(action_clipped))
+        reward = reward_calculator.compute_reward(new_obs, action_clipped, info, truncated)
 
         
         # 4. Log Metrics
         metrics["rewards"].append(reward)
         metrics["positions"].append(env.state[:2].copy())
-        metrics["energy"] += (action[0]**2 + action[1]**2) * env.env_cfg["dt"]
+        metrics["energy"] += (action_clipped[0]**2 + action_clipped[1]**2) * env.env_cfg["dt"]
         
         # Track safety using raw lidar data (usually from index 3 onwards)
-        lidar_data = next_obs[3:] 
+        lidar_data = new_obs[3:] 
         if lidar_data is not None and lidar_data.size > 0:
             # Ensure the key exists in metrics before updating it
             if "min_obstacle_dist" not in metrics:
@@ -84,7 +93,7 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
             else:
                 env.render()
 
-        obs = next_obs
+        obs = new_obs
         if terminated or truncated:
             success = info.get('is_success', False)
             collision = info.get('collision', False)

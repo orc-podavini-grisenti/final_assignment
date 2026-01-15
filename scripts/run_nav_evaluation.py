@@ -37,10 +37,10 @@ EXAMPLE USAGE:
 
 REAL USAGE EXAMPLES:
 # 1. Evaluate General Performance (Success, Collision, etc.)
-python ./scripts/run_nav_evaluation.py --mode single --model training/nav_1/nav_agent_final.pth --name "nav_v1" --render
+python ./scripts/run_nav_evaluation.py --mode single --model training/nav_1/nav_actor_final.pth --name "nav_v1" --render
 
 # 2. Evaluate Path Quality (Comparison against Dubins Path)
-python ./scripts/run_nav_evaluation.py --mode single --model training/nav_1/nav_agent_final.pth --name "nav_v1" --path_evaluation --render
+python ./scripts/run_nav_evaluation.py --mode single --model training/nav_1/nav_actor_final.pth --name "nav_v1" --path_evaluation --render
 
 # 3. Compare all evaluated models (General Leaderboard)
 python ./scripts/run_nav_evaluation.py --mode compare --comp_type general

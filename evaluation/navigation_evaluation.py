@@ -8,7 +8,7 @@ from tabulate import tabulate
 # --- Import your modules ---
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
-from models.navigation_network import NavAgent
+from models.navigation_network import NavActor
 from utils.simulation_2 import navigation_simulation  
 from utils.normalization import ObservationNormalizer
 
@@ -84,7 +84,7 @@ def evaluate_single_nav_model(model_path, model_alias, num_episodes=50, seed=0, 
     obs_dim = 3 + n_rays # [rho, alpha, d_theta] + lidar
     action_dim = 2
     
-    agent = NavAgent(obs_dim, action_dim, hidden_dim=512, device=device)
+    agent = NavActor(obs_dim, action_dim, hidden_dim=512).to(device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval() # Set to evaluation mode
 
