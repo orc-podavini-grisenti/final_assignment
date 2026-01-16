@@ -9,8 +9,8 @@ from tabulate import tabulate
 
 # Environment and Simulation Utilities
 from envs.unicycle_env import UnicycleEnv
-from utils.simulation_2 import navigation_simulation
-from utils.normalization_2 import ObservationNormalizer
+from utils.simulation import navigation_simulation
+from utils.normalization import ObservationNormalizer
 from models.navigation_network import NavActor
 
 """

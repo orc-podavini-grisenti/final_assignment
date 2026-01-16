@@ -9,11 +9,11 @@ from tabulate import tabulate
 from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
 from models.navigation_network import NavActor
-from utils.simulation_2 import navigation_simulation  
-from utils.normalization_2 import ObservationNormalizer
+from utils.simulation import navigation_simulation  
+from utils.normalization import ObservationNormalizer
 
 # --- Import local utils ---
-from evaluation.utils_2 import print_nav_evaluation_report
+from evaluation.utils import print_nav_evaluation_report
 
 
 # --- CONSTANTS ---
@@ -168,7 +168,7 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, see
         
         # Calculate Ideal Reference (Dubins)
         radius = env.rob_cfg['v_max'] / env.rob_cfg['w_max']
-        planner = DubinsPlanner(curvature_max=1.0/radius, step_size=0.05)
+        planner = DubinsPlanner(curvature=1.0/radius, step_size=0.05)
         ideal_path = planner.get_path(env.state, env.goal)
         ideal_len = np.sum(np.linalg.norm(np.diff(ideal_path[:, :2], axis=0), axis=1))
 

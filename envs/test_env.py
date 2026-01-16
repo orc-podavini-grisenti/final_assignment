@@ -10,8 +10,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from unicycle_env import UnicycleEnv
 
 # 1. Setup
-config_path = 'configs/empty_env.yaml'
-env = UnicycleEnv(config_path=config_path)
+randome_env = 'env'
+empty_env = 'empty_env'
+fixed_env = 'fixed_env'
+nav_env = 'env_nav_ev'
+env = UnicycleEnv(nav_env)
 env.render_mode = "human" # Enable the window
 
 seed = 0

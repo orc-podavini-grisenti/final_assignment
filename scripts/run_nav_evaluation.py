@@ -15,18 +15,11 @@ goal autonomously while avoiding obstacles and optimizing path efficiency.
 
 It operates in two modes:
 
-1. SINGLE MODE (--mode single):
-   - Conducts two distinct evaluations for a specific model:
-        a) General Performance: Success Rate, Collision Rate, Safety, and Energy.
-        b) Path Quality: Efficiency compared to the ideal Dubins path.
-   - Saves results into two separate CSV databases for long-term tracking.
-   - Generates raw data for statistical significance testing.
+1. NAV MODE:
+   General Performance: Success Rate, Collision Rate, Safety, and Energy.
 
-2. COMPARE MODE (--mode compare):
-   - Aggregates data from 'NAV_general_performance.csv' and 'NAV_path_quality.csv'.
-   - Generates "Leaderboards" ranking models based on Reliability and Path Optimality.
-   - Produces statistical analysis (Wilcoxon/T-Tests) and comparative boxplots.
-
+2. PATH MODE (--path_evaluation):
+   Path Quality: Efficiency compared to the ideal Dubins path.
    
 EXAMPLE USAGE:
 1. NAV MODE:  python ./scripts/run_nav_evaluation.py --model path/to/model.pth --name "nav_v1"
