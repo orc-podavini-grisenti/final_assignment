@@ -171,8 +171,22 @@ def evaluate_single_nav_model_path(model_path, model_alias, num_episodes=50, see
         planner = DubinsPlanner(curvature=1.0/radius, step_size=0.05)
         ideal_path = planner.get_path(env.state, env.goal)
         ideal_len = np.sum(np.linalg.norm(np.diff(ideal_path[:, :2], axis=0), axis=1))
+        
+        ''' 
+        # store the first 3 episode; both video and last frames
+        video_path, frame_path = None, None
+        if i > 0 and i < 4:
+            # Create directories for artifacts
+            os.makedirs("_documentations/navigation_videos", exist_ok=True)
+            os.makedirs("_documentations/navigation_frames", exist_ok=True)
+        
+            base_name = f"nav_{model_alias}_seed{i}".replace("/", "_")
+            video_path = os.path.join("_documentations/navigation_path_videos", f"{base_name}.mp4")
+            frame_path = os.path.join("_documentations/navigation_path_frames", f"{base_name}_final.png")
+            print(f"📹 Video path set to: {video_path}")
+        '''
 
-        sim_data = navigation_simulation(env, agent, normalizer, render=render, ideal_path=ideal_path)
+        sim_data = navigation_simulation(env, agent, normalizer, render=render, ideal_path=ideal_path, video_path=video_path, frame_path=frame_path)
         
         if sim_data and sim_data["is_success"]:
             raw_path_results["actual_len"].append(sim_data["path_length"])

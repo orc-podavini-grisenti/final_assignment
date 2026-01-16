@@ -78,11 +78,15 @@ def run_nav_episode(model_name, seed=None, save_video=False):
     normalizer = ObservationNormalizer(max_dist=5.0, lidar_range=env.rob_cfg['lidar_range'])
 
     # 3. Prepare Video Path
-    video_path = None
+    video_path, frame_path = None, None
     if save_video:
+        # Create directories for artifacts
         os.makedirs("_documentations/navigation_videos", exist_ok=True)
-        filename = f"nav_{model_name}_seed{seed}.mp4".replace("/", "_")
-        video_path = os.path.join("_documentations/navigation_videos", filename)
+        os.makedirs("_documentations/navigation_frames", exist_ok=True)
+    
+        base_name = f"nav_{model_name}_seed{seed}".replace("/", "_")
+        video_path = os.path.join("_documentations/navigation_videos", f"{base_name}.mp4")
+        frame_path = os.path.join("_documentations/navigation_frames", f"{base_name}_final.png")
         print(f"📹 Video path set to: {video_path}")
 
     print(f"▶️  Starting Autonomous Navigation with model: {model_name}...")
@@ -95,7 +99,8 @@ def run_nav_episode(model_name, seed=None, save_video=False):
         normalizer, 
         render=True, 
         max_steps=1000, 
-        video_path=video_path
+        video_path=video_path,
+        frame_path=frame_path 
     )
 
     # 5. Display Metrics

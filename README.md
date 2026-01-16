@@ -20,7 +20,7 @@ Install the required Python packages specified in requirements.txt.
 pip install -r requirements.txt
 ```
 
-### 3. Running the Simulation
+### 3. Running the Scripts
 Note: This project is structured to be run from the root directory.
 Before running any scripts, ensure the root directory is added to your Python path so imports work correctly.
 
@@ -28,9 +28,9 @@ Before running any scripts, ensure the root directory is added to your Python pa
 # 1. Export the Python path (Run this once per terminal session)
 export PYTHONPATH=$PYTHONPATH:.
 # 2. Run the scripts from the root folder
-python planner/execute_dubins.py # Example: Running the Dubins Path Executor
+# Example: Running the Tracking Policy simulations
+ python ./scripts/run_trajectory_tracking.py --type rl --model v1_no_baseline --seed 1 
 ```
-Tip: Alternatively, you can run scripts as modules without manually exporting the path: 
-```bash
-python -m planner.execute_dubins
-```
+
+## Evaluation 
+To execute the evaluation that lead to our results follow the instruction of the README file you finn in the directory \evaluation

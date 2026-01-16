@@ -234,7 +234,7 @@ def run_simulation(env, path, controller, render=False, max_steps=500, video_pat
 
 
 from utils.reward import NavigationReward
-def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None, max_steps=1000, video_path=None):
+def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None, max_steps=1000, video_path=None, frame_path=None):
     """
     Runs an autonomous navigation episode using a trained RL agent.
     
@@ -244,6 +244,7 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
     obs = env.get_obs()
     frames = []
     save_video = video_path is not None
+    save_frame = frame_path is not None  
 
     reward_calculator = NavigationReward(env.rob_cfg['v_max'], env.env_cfg['dt'])
 
@@ -311,16 +312,18 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         else:
             metrics["min_obstacle_dist"] = None
 
-        # 5. Rendering
+        # 5. Rendering Logic
         if render:
             env.set_render_trajectory(metrics["positions"])
-            if ideal_path is not None: env.set_render_trajectory(ideal_path, second_path = True)
+            if ideal_path is not None: env.set_render_trajectory(ideal_path, second_path=True)
             
-            if save_video:
+            # Capture frame if we need either a video OR a final frame image
+            if save_video or save_frame:
                 frame = env.render() 
                 if frame is not None:
-                    frame = frame[:, :, ::-1]
-                    frames.append(frame)
+                    # Convert BGR to RGB if necessary for imageio
+                    frame_rgb = frame[:, :, ::-1]
+                    frames.append(frame_rgb)
             else:
                 env.render()
 
@@ -339,9 +342,16 @@ def navigation_simulation(env, agent, normalizer, render=False, ideal_path=None,
         pts = np.array(metrics["positions"])
         total_dist_traveled = np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1))
     
+    # Save Video
     if save_video and len(frames) > 0:
         fps = int(1 / env.env_cfg.get("dt", 0.05))
         imageio.mimsave(video_path, frames, fps=fps)
+        print(f"🎬 Video saved to: {video_path}")
+
+    # Save Last Frame (New Logic)
+    if save_frame and len(frames) > 0:
+        imageio.imwrite(frame_path, frames[-1])
+        print(f"🖼️  Final frame saved to: {frame_path}")
 
     return {
         "is_success": success,
