@@ -76,7 +76,7 @@ def evaluate_single_model(model_path, model_alias, num_episodes, seed, verbose=T
         controller = LyapunovController(LyapunovParams(2.0, 5.0))
 
     # 2. Setup Environment
-    env = UnicycleEnv()
+    env = UnicycleEnv('empty_env')
     
     # Storage for raw run data
     results = {
@@ -375,7 +375,7 @@ def radius_sweep(model_path, min_r, max_r, steps, seed):
     """
     print(f"--> Starting Radius Sweep for: {model_path}")
     controller = RLController(model_path=model_path)
-    env = UnicycleEnv()
+    env = UnicycleEnv('empty_env')
     
     # Generate linear range of radii
     test_radii = np.linspace(min_r, max_r, steps)

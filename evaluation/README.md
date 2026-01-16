@@ -1,5 +1,5 @@
-# 📊 Performance Evaluation Guide
-This guide explains how to evaluate your controllers and generate comparative statistical reports.
+# Part 1) Tracking Performance Evaluation Guide
+This guide explains how to evaluate tracking controllers and generate comparative statistical reports.
 
 ## 1. Single Model Evaluation
 Run the evaluation script for each controller individually. This generates the necessary summary CSVs and raw episode data files required for the statistical analysis.
@@ -8,34 +8,31 @@ Run the evaluation script for each controller individually. This generates the n
 By default, running without a model path evaluates the analytical Lyapunov controller.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode single
+python ./scripts/run_tracking_evaluation.py --mode single
 ```
 ### B) Evaluate RL Policies ( without baseline )
 To evaluate a trained model, provide the path to the policy file and a custom name for the report.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode single --model training/v1_no_baseline/policy_model.ph --name v1_no_baseline
+python ./scripts/run_tracking_evaluation.py --mode single --model training/v1_no_baseline/policy_model.ph --name v1_no_baseline
 ```
 
 ### C) Evaluate RL Policies ( with baseline )
 To evaluate a trained model, provide the path to the policy file and a custom name for the report.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode single --model training/v2_baseline/policy_model.ph --name v2_baseline
+python ./scripts/run_tracking_evaluation.py --mode single --model training/v2_baseline/policy_model.ph --name v2_baseline
 ```
 
 
 ## 2. Multi-Controller Comparison
 Once you have evaluated at least two controllers, run the comparison mode. This will:
-
 - Generate a Leaderboard: A table comparing Mean ± Std Dev for all metrics.
-
 - Statistical Analysis: Perform Wilcoxon Signed-Rank tests and calculate Cliff's Delta effect sizes (comparing your RL models against the baseline).
-
 - Distribution Plots: Save comparative boxplots for each metric in evaluation/output/boxplots/.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode compare
+python ./scripts/run_tracking_evaluation.py --mode compare
 ```
 
 
@@ -44,19 +41,31 @@ Max Curve Test (Radius Sweep)
 To test how the controller handles different path curvatures, run a radius sweep. This will test the model across a range of radii and plot the success/error curves.
 
 ```console
-python ./scripts/run_policy_evaluation.py --mode sweep --model training/v1_no_baseline/policy_model.ph
+python ./scripts/run_tracking_evaluation.py --mode sweep --model training/v1_no_baseline/policy_model.ph
 
-python ./scripts/run_policy_evaluation.py --mode sweep --model training/v2_baseline/policy_model.ph
+python ./scripts/run_tracking_evaluation.py --mode sweep --model training/v2_baseline/policy_model.ph
 ```
 
 ## Output Structure
 All results are stored in the evaluation/output/ directory:
-
 - TT_policy_comparison.csv: Summary of all single evaluations runs.
-
 - raw_episode_data/: Individual episode results used for statistical testing.
-
 - boxplots/: Visual distribution of metrics (CTE, Energy, Smoothness, etc.).
-
 - sweep_scatter_policy_model.png: Visual result of the radius sweep.
+
+
+
+
+# Part 2) Navigation Performance Evaluation Guide
+For the navigation part we decide to evaluate the policy based on two evaluation suite:
+1. NAV MODE: General Performance: Success Rate, Collision Rate, Safety, and Energy.
+
+```console
+python ./scripts/run_nav_evaluation.py --model training/nav_1/nav_actor_final.pth --name "nav_v1" --render
+```
+
+2. PATH MODE: Path Quality: Efficiency compared to the ideal Dubins path.
+```console
+python ./scripts/run_nav_evaluation.py --model training/nav_1/nav_actor_final.pth --name "nav_v1" --path_evaluation --render
+```
 

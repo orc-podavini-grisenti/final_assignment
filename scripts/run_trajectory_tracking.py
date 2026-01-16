@@ -67,7 +67,7 @@ def get_controller(c_type, model_name=None):
 
 def run_visual_episode(controller_type, seed=None, model_name=None, save_video=False):
     """Runs a single simulation episode with the specified controller."""
-    env = UnicycleEnv()
+    env = UnicycleEnv('empty_env')
     np.random.seed(seed) 
     
     if seed is not None:

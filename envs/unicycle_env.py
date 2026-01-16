@@ -24,28 +24,38 @@ class UnicycleEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, config_path=None):
+    def __init__(self, config_name=None):
         super(UnicycleEnv, self).__init__()
 
-        # --- 1. Load Configuration ---
-        if config_path is None:
-            # Default to config/env.yaml relative to this file
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(current_dir) 
-            config_path = os.path.join(project_root, 'configs', 'empty_env.yaml')
+        # --- 1. Load Configuration ---        
+        current_dir = os.path.dirname(os.path.abspath(__file__))    # Get the directory where THIS file (unicycle_env.py) is located: .../project/envs
+        project_root = os.path.dirname(current_dir)     # Go up one level to find the Project Root: .../project
+        config_dir = os.path.join(project_root, 'configs')  # Define the directory where configs are stored
+        # Handle the case where config_name might be None (fallback to default)
+        if config_name is None:
+            config_name = "env"
+        config_name = config_name + ".yaml"
+        # Build the full absolute path
+        config_path = os.path.join(config_dir, config_name)
+        # Debug print (Optional: helps verify it's looking in the right place)
+        print(f"📍 Loading config from: {config_path}")
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"❌ Config file not found: {config_path}")
 
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
+    
         # --- 2. Apply Config Parameters ---
         self.env_cfg = config['environment']    # Enviroment Configuration
         self.rob_cfg = config['robot']          # Robot Configuration
         self.goal_cfg = config['goal']        # Goal Configuration
         self.obs_cfg = config['obstacles']    # Obstacle Configuration
-        
-        
+        self.rew_cfg = config['rewards']      # Reward Configuration
+
+
         # --- Action Space ---
-        # FIX: Define the arrays explicitly as float32 to match Gymnasium's expectation
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0], dtype=np.float32), 
             high=np.array([1.0, 1.0], dtype=np.float32), 
@@ -53,7 +63,8 @@ class UnicycleEnv(gym.Env):
         )
         
         # --- Observation Space ---
-        obs_dim = 3 + (2 * self.obs_cfg['n_obstacles'])
+        n_rays = self.obs_cfg.get('n_rays', 20)
+        obs_dim = 3 + n_rays
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
@@ -61,19 +72,24 @@ class UnicycleEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Internal State (Initialize with float32 for consistency)
-        self.state = np.zeros(3, dtype=np.float32)  # x, y, theta
-        self.goal = np.zeros(3, dtype=np.float32)   # x, y, theta
+        # --- Internal State ---
+        self.state = np.zeros(3, dtype=np.float32) 
+        self.goal = np.zeros(3, dtype=np.float32) 
         self.obstacles = []
         self.current_step = 0
         self.current_seed = None
 
         # --- Modules ---
-        self.obstacle_manager = ObstacleManager(lidar_range=self.obs_cfg['lidar_range'])
+        self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])
         
         # --- Render Stuffs --- 
         self.trajectory_buffer = None
-        
+        self.second_trajectory_buffer = None
+
+        self.progress_balance = 0
+        self.reward_balance = 0
+        self.was_near = False
+
 
 
 
@@ -120,7 +136,7 @@ class UnicycleEnv(gym.Env):
                 bounds=self.env_cfg['world_bounds'],
                 robot_pos=self.state,
                 goal_pos=self.goal,
-                min_clearance=0.5,
+                min_clearance=self.obs_cfg['min_clearance'],
                 np_random=self.np_random
             )
             # NB: We don't need to check that the goal collide with obstacle; becouse generate_random_obstacles
@@ -232,8 +248,6 @@ class UnicycleEnv(gym.Env):
         
         return obs, terminated, truncated, info
 
-
-
     ''' Constructs the observation vector. '''
     def get_obs(self):
         """
@@ -257,8 +271,9 @@ class UnicycleEnv(gym.Env):
             The difference between the desired goal orientation and current heading.
             Exential to reach the goal with the desired orientation.s
         
-        4. Obstacle Data (d_obs, phi_obs):
-           - Vector of closest obstacles, also in polar coordinates (dist, angle).
+        4. LiDAR Scan [ray_1 ... ray_N]: [0, 1]
+            Distances from a fixed-angle radial sweep.
+            Provides a spatially consistent 'semantic' image of obstacles.
         """
         x, y, theta = self.state
         gx, gy, gtheta = self.goal
@@ -277,16 +292,11 @@ class UnicycleEnv(gym.Env):
         
         obs_vec = [rho, alpha, d_theta]
         
-        # --- Obstacle Observations ---
-        obs_data = self.obstacle_manager.get_closest_obstacles(self.state, self.obs_cfg['n_obstacles'])
-        
-        # Flatten obstacle data
-        flat_obs = []
-        for dist, angle in obs_data:
-            flat_obs.extend([dist, angle])
+        # --- 2. LiDAR Observations ---
+        n_rays = self.obs_cfg.get('n_rays', 20)
+        scan = self.obstacle_manager.get_lidar_scan(self.state, n_rays)
                 
-        return np.array(obs_vec + flat_obs, dtype=np.float32)
-
+        return np.concatenate([obs_vec, scan]).astype(np.float32)
 
 
     ''' Private Function that menage the spawn of a random goal.'''
@@ -316,11 +326,26 @@ class UnicycleEnv(gym.Env):
         
         # Random spawn modality:
         else:
-            self.goal = np.array([
-                self.np_random.uniform(g_x_min, g_x_max),
-                self.np_random.uniform(g_y_min, g_y_max),
-                self.np_random.uniform(-np.pi, np.pi)
-            ], dtype=np.float32)
+            import numpy as np
+
+            # Define your exclusion radius
+            min_dist = 1.0  # Adjust this value as needed
+            min_dist_sq = min_dist**2  # Using squared distance is computationally cheaper
+
+            while True:
+                # 1. Sample potential coordinates
+                x = self.np_random.uniform(g_x_min, g_x_max)
+                y = self.np_random.uniform(g_y_min, g_y_max)
+                
+                # 2. Check if the point is outside the excluded radius
+                if (x**2 + y**2) > min_dist_sq:
+                    # 3. If valid, assign the goal and break the loop
+                    self.goal = np.array([
+                        x, 
+                        y, 
+                        self.np_random.uniform(-np.pi, np.pi)
+                    ], dtype=np.float32)
+                    break
 
 
 
@@ -352,8 +377,18 @@ class UnicycleEnv(gym.Env):
             cv2.polylines(canvas, [points], True, (0, 0, 150), 2)  # Dark red outline
 
         # 3. Draw Goal (Green Circle)
-        gx, gy = to_pixel(self.goal[0], self.goal[1])
+        g_x_world, g_y_world, g_theta = self.goal
+        gx, gy = to_pixel(g_x_world, g_y_world)
         cv2.circle(canvas, (gx, gy), int(0.2 * scale), (0, 255, 0), -1)
+        # Calculate Heading Arrow Endpoint
+        # We use a length slightly longer than the radius so it is visible
+        arrow_len = int(0.4 * scale) 
+        # Note: We subtract the Y component because OpenCV Y-axis is inverted (down is positive)
+        end_gx = gx + int(arrow_len * np.cos(g_theta))
+        end_gy = gy - int(arrow_len * np.sin(g_theta))
+        # Draw Arrow
+        cv2.arrowedLine(canvas, (gx, gy), (end_gx, end_gy), (0, 100, 0), 2, tipLength=0.3)
+        # Label
         cv2.putText(canvas, "GOAL", (gx + 10, gy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 100, 0), 1)
 
         # 4. Draw Robot (Blue Circle + Heading Line)
@@ -364,11 +399,15 @@ class UnicycleEnv(gym.Env):
         # Body
         cv2.circle(canvas, (rpx, rpy), robot_rad_px, (255, 0, 0), -1)
         
-        # Heading (Line indicating direction)
-        end_x = rpx + int(robot_rad_px * np.cos(theta))
-        end_y = rpy - int(robot_rad_px * np.sin(theta)) # Minus because Y is flipped
-        cv2.line(canvas, (rpx, rpy), (end_x, end_y), (0, 0, 0), 2)
-
+        # Heading Arrow
+        # Length is 1.5x radius to make it stick out of the body
+        r_arrow_len = int(robot_rad_px * 1.5) 
+        end_rx = rpx + int(r_arrow_len * np.cos(theta))
+        end_ry = rpy - int(r_arrow_len * np.sin(theta)) # Minus because Y is flipped
+        
+        # Draw Arrow (Black)
+        cv2.arrowedLine(canvas, (rpx, rpy), (end_rx, end_ry), (0, 0, 0), 2, tipLength=0.3)
+        
         # 5. Draw Trajectory (if set) ---
         if self.trajectory_buffer is not None and len(self.trajectory_buffer) > 0:
             # Convert world points to pixel points
@@ -381,8 +420,20 @@ class UnicycleEnv(gym.Env):
             pts = np.array(path_pixels, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(canvas, [pts], isClosed=False, color=(255, 255, 0), thickness=2)
+        
+        if self.second_trajectory_buffer is not None and len(self.second_trajectory_buffer) > 0:
+            # Convert world points to pixel points
+            path_pixels = []
+            for pt in self.second_trajectory_buffer:
+                # pt is assumed to be [x, y, ...]
+                path_pixels.append(to_pixel(pt[0], pt[1]))
+            
+            # Draw as a polyline (Cyan color)
+            pts = np.array(path_pixels, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(canvas, [pts], isClosed=False, color=(0, 255, 0), thickness=2)
 
-        # 5. Display (Optional: Only works if you have a GUI/X11)
+        # 6. Display (Optional: Only works if you have a GUI/X11)
         # If running in headless Docker, you might want to return the array instead.
         if self.render_mode == "human":
             cv2.imshow("Unicycle Nav", canvas)
@@ -391,9 +442,10 @@ class UnicycleEnv(gym.Env):
         return canvas
     
 
-    def set_render_trajectory(self, path):
+    def set_render_trajectory(self, path, second_path=False):
         """
         Sets a trajectory (list of [x, y] or [x, y, theta]) to be visualized.
         Call this from your main script after calculating the path.
         """
-        self.trajectory_buffer = path
+        if not second_path: self.trajectory_buffer = path 
+        else: self.second_trajectory_buffer = path 

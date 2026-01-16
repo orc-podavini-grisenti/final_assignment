@@ -18,10 +18,13 @@ environment:
 # --- Robot Physical Limits ---
 robot:
   radius: 0.3       # Radius of the robot (meters) for collision checking
-  v_min: 0.0        # Minimum linear velocity (m/s)
+  v_min: 0.0        # Minimum linear velocity (m/s) - small negative velocity for exiting blind spots
   v_max: 1.0        # Maximum linear velocity (m/s)
   w_min: -1.5       # Minimum angular velocity (rad/s)
   w_max: 1.5        # Maximum angular velocity (rad/s)
+
+  lidar_range: 3.0      # Max detection range for the robot's sensors
+  lidar_rays: 20        # Number of LiDAR fixed rays
 
 
 
