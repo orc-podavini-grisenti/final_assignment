@@ -10,7 +10,7 @@ from tabulate import tabulate
 # Environment and Simulation Utilities
 from envs.unicycle_env import UnicycleEnv
 from utils.simulation_2 import navigation_simulation
-from utils.normalization import ObservationNormalizer
+from utils.normalization_2 import ObservationNormalizer
 from models.navigation_network import NavActor
 
 """
@@ -31,7 +31,7 @@ It is particularly useful for:
 HOW TO RUN THIS SCRIPT:
 -----------------------
 1. Run with a specific trained model: 
-   $ python ./scripts/run_navigation.py --model nav_1 --seed 42
+   $ python ./scripts/run_navigation.py --model nav_1 --seed 3086
 
 2. Run and save a video of the navigation performance: 
    $ python ./scripts/run_navigation.py --model nav_1 --save_video
@@ -39,8 +39,6 @@ HOW TO RUN THIS SCRIPT:
 3. Test without a fixed seed (random scenario):
    $ python ./scripts/run_navigation.py --model nav_1
 
-NB: The "Navigation Efficiency" metric compares the agent's path length 
-    against the shortest possible Dubins Path for that specific start/goal.
 """
 
 def get_navigation_agent(model_name, obs_dim, action_dim, device):
@@ -64,7 +62,7 @@ def run_nav_episode(model_name, seed=None, save_video=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. Setup Environment
-    env = UnicycleEnv()
+    env = UnicycleEnv("env_nav_ev")
     if seed is not None:
         print(f"🎲 Using Seed: {seed}")
         env.reset(seed=seed)

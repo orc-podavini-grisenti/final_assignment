@@ -10,10 +10,10 @@ from envs.unicycle_env import UnicycleEnv
 from planner.dubins_planner import DubinsPlanner
 from models.navigation_network import NavActor
 from utils.simulation_2 import navigation_simulation  
-from utils.normalization import ObservationNormalizer
+from utils.normalization_2 import ObservationNormalizer
 
 # --- Import local utils ---
-from evaluation.utils import print_nav_evaluation_report
+from evaluation.utils_2 import print_nav_evaluation_report
 
 
 # --- CONSTANTS ---

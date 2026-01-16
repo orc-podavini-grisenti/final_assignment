@@ -288,12 +288,13 @@ class ObstacleManager:
             # Avoid division by zero
             mask = np.abs(det) > 1e-6
             
-            # t = ((P1_O_x * E_y) - (P1_O_y * E_x)) / det
-            t = (P1_O[..., 0] * E[..., 1] - P1_O[..., 1] * E[..., 0]) / det
-            # u = ((P1_O_x * D_y) - (P1_O_y * D_x)) / det
-            u = (P1_O[..., 0] * D[..., 1] - P1_O[..., 1] * D[..., 0]) / det
+            # 3. Usa np.where per dividere solo dove è sicuro farlo.
+            # Dove la maschera è False, mettiamo un valore neutro (es. 0.0) 
+            # per evitare il warning di divisione per zero.
+            t = np.where(mask, (P1_O[..., 0] * E[..., 1] - P1_O[..., 1] * E[..., 0]) / np.where(mask, det, 1.0), self.lidar_range + 1)
+            u = np.where(mask, (P1_O[..., 0] * D[..., 1] - P1_O[..., 1] * D[..., 0]) / np.where(mask, det, 1.0), -1.0)
 
-            # Intersection is valid if 0 <= t <= lidar_range AND 0 <= u <= 1
+            # Intersection is svalid if 0 <= t <= lidar_range AND 0 <= u <= 1
             valid = mask & (t >= 0) & (t <= self.lidar_range) & (u >= 0) & (u <= 1)
             
             # Update scan with minimum t for each ray across all edges of this obstacle
