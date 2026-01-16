@@ -13,7 +13,8 @@ from unicycle_env import UnicycleEnv
 env = UnicycleEnv()
 env.render_mode = "human" # Enable the window
 
-obs, info = env.reset()
+seed = 0
+obs, info = env.reset(seed)
 print("Environment Reset.")
 
 

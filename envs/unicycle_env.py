@@ -376,8 +376,18 @@ class UnicycleEnv(gym.Env):
             cv2.polylines(canvas, [points], True, (0, 0, 150), 2)  # Dark red outline
 
         # 3. Draw Goal (Green Circle)
-        gx, gy = to_pixel(self.goal[0], self.goal[1])
+        g_x_world, g_y_world, g_theta = self.goal
+        gx, gy = to_pixel(g_x_world, g_y_world)
         cv2.circle(canvas, (gx, gy), int(0.2 * scale), (0, 255, 0), -1)
+        # Calculate Heading Arrow Endpoint
+        # We use a length slightly longer than the radius so it is visible
+        arrow_len = int(0.4 * scale) 
+        # Note: We subtract the Y component because OpenCV Y-axis is inverted (down is positive)
+        end_gx = gx + int(arrow_len * np.cos(g_theta))
+        end_gy = gy - int(arrow_len * np.sin(g_theta))
+        # Draw Arrow
+        cv2.arrowedLine(canvas, (gx, gy), (end_gx, end_gy), (0, 100, 0), 2, tipLength=0.3)
+        # Label
         cv2.putText(canvas, "GOAL", (gx + 10, gy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 100, 0), 1)
 
         # 4. Draw Robot (Blue Circle + Heading Line)
@@ -388,11 +398,15 @@ class UnicycleEnv(gym.Env):
         # Body
         cv2.circle(canvas, (rpx, rpy), robot_rad_px, (255, 0, 0), -1)
         
-        # Heading (Line indicating direction)
-        end_x = rpx + int(robot_rad_px * np.cos(theta))
-        end_y = rpy - int(robot_rad_px * np.sin(theta)) # Minus because Y is flipped
-        cv2.line(canvas, (rpx, rpy), (end_x, end_y), (0, 0, 0), 2)
-
+        # Heading Arrow
+        # Length is 1.5x radius to make it stick out of the body
+        r_arrow_len = int(robot_rad_px * 1.5) 
+        end_rx = rpx + int(r_arrow_len * np.cos(theta))
+        end_ry = rpy - int(r_arrow_len * np.sin(theta)) # Minus because Y is flipped
+        
+        # Draw Arrow (Black)
+        cv2.arrowedLine(canvas, (rpx, rpy), (end_rx, end_ry), (0, 0, 0), 2, tipLength=0.3)
+        
         # 5. Draw Trajectory (if set) ---
         if self.trajectory_buffer is not None and len(self.trajectory_buffer) > 0:
             # Convert world points to pixel points
