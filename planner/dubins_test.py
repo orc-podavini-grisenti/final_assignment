@@ -10,7 +10,7 @@ from planner.dubins_planner import DubinsPlanner
 # 1. Setup
 env = UnicycleEnv()
 env.render_mode = "human"  # Enable window
-planner = DubinsPlanner(curvature_max=1.5)
+planner = DubinsPlanner(curvature=1.5)
 
 obs, _ = env.reset()
 
@@ -27,6 +27,7 @@ else:
     print(f"Path found with {len(path)} waypoints.")
     # 3. Inject into environment
     env.set_render_trajectory(path)
+    env.render()
 
 # 4. Wait loop to visualize
 print("Press any key to close window...")

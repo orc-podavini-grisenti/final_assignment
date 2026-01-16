@@ -77,6 +77,7 @@ class UnicycleEnv(gym.Env):
         self.goal = np.zeros(3, dtype=np.float32) 
         self.obstacles = []
         self.current_step = 0
+        self.current_seed = None
 
         # --- Modules ---
         self.obstacle_manager = ObstacleManager(lidar_range=self.rob_cfg['lidar_range'])

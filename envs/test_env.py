@@ -10,7 +10,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from unicycle_env import UnicycleEnv
 
 # 1. Setup
-env = UnicycleEnv()
+config_path = 'configs/empty_env.yaml'
+env = UnicycleEnv(config_path=config_path)
 env.render_mode = "human" # Enable the window
 
 seed = 0
@@ -34,7 +35,7 @@ while True:
 # 3. Main Loop
 for _ in range(10):
     action = env.action_space.sample()  # Random v, omega
-    obs, reward, terminated, truncated, info = env.step(action)
+    obs, terminated, truncated, info = env.step(action)
     
     # Render
     env.render()
@@ -43,7 +44,7 @@ for _ in range(10):
     # This also allows the window to refresh events
     cv2.waitKey(50)
 
-    print(f"Obs: {obs[:3]}... | Reward: {reward:.2f} | Done: {terminated}")
+    print(f"Obs: {obs[:3]}... | Done: {terminated}")
     
     if terminated or truncated:
         if info.get('is_success', False):
